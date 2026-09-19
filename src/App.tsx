@@ -629,7 +629,7 @@ export default function App() {
           err.message === 'Failed to fetch'
             ? 'Backend se connect nahi ho pa raha. Backend URL (VITE_BACKEND_URL) aur Railway server status check karo.'
             : err.message || 'Failed to connect to Llama 3.2 model endpoint';
-        const errorText = const errorText = `\n\n⚠️ *Streaming error: ${err.message || 'Failed to connect'}*\n\n🔎 Debug URL: \`${getApiUrl('/api/chat')}\``;
+        const errorText = `\n\n⚠️ *Streaming error: ${err.message || 'Failed to connect'}*\n\n🔎 Debug URL: \`${getApiUrl('/api/chat')}\``;
         if (isTempChatActive) {
           setTempChatMessages((prev) =>
             prev.map((m) =>

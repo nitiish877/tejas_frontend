@@ -83,14 +83,6 @@ export default function App() {
         if (!parsed.responseStyle) {
           parsed.responseStyle = 'adaptive';
         }
-        // Clean out any old hardcoded domains from user's storage
-        if (
-          parsed.customBackendUrl?.includes('railway.app') ||
-          parsed.customBackendUrl?.includes('onrender.com') ||
-          parsed.customBackendUrl?.includes('tejasbacked')
-        ) {
-          parsed.customBackendUrl = '';
-        }
         return { ...DEFAULT_SETTINGS, ...parsed };
       }
     } catch (e) {
@@ -543,6 +535,7 @@ export default function App() {
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
       let accumulatedText = '';
+      let streamError = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -560,6 +553,7 @@ export default function App() {
             const dataStr = trimmed.slice(5).trim();
             try {
               const parsed = JSON.parse(dataStr);
+              if (parsed.error) streamError = String(parsed.error);
               if (parsed.text) {
                 accumulatedText += parsed.text;
 
@@ -596,6 +590,10 @@ export default function App() {
         }
       }
 
+      if (streamError && !accumulatedText) {
+        throw new Error(streamError);
+      }
+
       // Mark complete
       if (isTempChatActive) {
         setTempChatMessages((prev) =>
@@ -627,7 +625,11 @@ export default function App() {
         console.log('Stream aborted by user');
       } else {
         console.error('Chat streaming error:', err);
-        const errorText = `\n\n⚠️ *Streaming error: ${err.message || 'Failed to connect to Llama 3.2 model endpoint'}*`;
+        const friendly =
+          err.message === 'Failed to fetch'
+            ? 'Backend se connect nahi ho pa raha. Backend URL (VITE_BACKEND_URL) aur Railway server status check karo.'
+            : err.message || 'Failed to connect to Llama 3.2 model endpoint';
+        const errorText = `\n\n⚠️ *Streaming error: ${friendly}*`;
         if (isTempChatActive) {
           setTempChatMessages((prev) =>
             prev.map((m) =>

@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="cyberBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090d16"/>
+      <stop offset="50%" stop-color="#05070a"/>
+      <stop offset="100%" stop-color="#020305"/>
+    </linearGradient>
+    <linearGradient id="neonTeal" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="50%" stop-color="#06b6d4"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+    <linearGradient id="metalLight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#475569"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+    <linearGradient id="metalDark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <filter id="cyanGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background base rounded -->
+  <rect width="512" height="512" rx="110" fill="url(#cyberBg)"/>
+  
+  <!-- Outer glowing subtle aura -->
+  <circle cx="256" cy="256" r="160" fill="#06b6d4" opacity="0.12" filter="url(#cyanGlow)"/>
+
+  <!-- Symmetrical Geometric Emblem Structure -->
+  <!-- Top Peak -->
+  <polygon points="256,72 296,144 256,168 216,144" fill="url(#metalLight)" stroke="#38bdf8" stroke-width="2.5"/>
+  <polygon points="256,72 256,168 216,144" fill="url(#metalDark)"/>
+  <line x1="256" y1="84" x2="256" y2="156" stroke="#38bdf8" stroke-width="3" filter="url(#cyanGlow)"/>
+
+  <!-- Bottom Peak -->
+  <polygon points="256,440 296,368 256,344 216,368" fill="url(#metalDark)" stroke="#38bdf8" stroke-width="2.5"/>
+  <polygon points="256,440 256,344 296,368" fill="url(#metalLight)"/>
+  <line x1="256" y1="428" x2="256" y2="356" stroke="#38bdf8" stroke-width="3" filter="url(#cyanGlow)"/>
+
+  <!-- Left Outer Wings -->
+  <polygon points="152,192 216,156 184,232 120,256" fill="url(#metalLight)" stroke="#06b6d4" stroke-width="2"/>
+  <polygon points="120,256 184,280 216,356 152,320" fill="url(#metalDark)" stroke="#06b6d4" stroke-width="2"/>
+  <polygon points="96,240 136,256 96,272 64,256" fill="#0f172a" stroke="#38bdf8" stroke-width="2.5"/>
+
+  <!-- Right Outer Wings -->
+  <polygon points="360,192 296,156 328,232 392,256" fill="url(#metalDark)" stroke="#06b6d4" stroke-width="2"/>
+  <polygon points="392,256 328,280 296,356 360,320" fill="url(#metalLight)" stroke="#06b6d4" stroke-width="2"/>
+  <polygon points="416,240 376,256 416,272 448,256" fill="#0f172a" stroke="#38bdf8" stroke-width="2.5"/>
+
+  <!-- Intermediate Layer Cuboid Shell -->
+  <polygon points="256,152 352,208 352,304 256,360 160,304 160,208" fill="none" stroke="#0ea5e9" stroke-width="3" opacity="0.8"/>
+  <polygon points="256,168 336,214 256,260 176,214" fill="url(#metalLight)" stroke="#38bdf8" stroke-width="2"/>
+  <polygon points="176,214 256,260 256,344 176,298" fill="url(#metalDark)" stroke="#0284c7" stroke-width="2"/>
+  <polygon points="256,260 336,214 336,298 256,344" fill="#0b1120" stroke="#0284c7" stroke-width="2"/>
+
+  <!-- Central Isometric Floating Core Cube -->
+  <!-- Top Face -->
+  <polygon points="256,204 308,234 256,264 204,234" fill="#1e293b" stroke="#38bdf8" stroke-width="3"/>
+  <!-- Left Face -->
+  <polygon points="204,234 256,264 256,324 204,294" fill="#0f172a" stroke="#38bdf8" stroke-width="3"/>
+  <!-- Right Face -->
+  <polygon points="256,264 308,234 308,294 256,324" fill="#090d16" stroke="#38bdf8" stroke-width="3"/>
+
+  <!-- Glowing Neon Core Lines and Insets -->
+  <polyline points="256,214 298,238 256,262 214,238 256,214" fill="none" stroke="#22d3ee" stroke-width="2" filter="url(#cyanGlow)"/>
+  <line x1="256" y1="264" x2="256" y2="324" stroke="#38bdf8" stroke-width="2.5" filter="url(#cyanGlow)"/>
+  <line x1="204" y1="234" x2="256" y2="264" stroke="#67e8f9" stroke-width="2"/>
+  <line x1="256" y1="264" x2="308" y2="234" stroke="#67e8f9" stroke-width="2"/>
+
+  <!-- Accent Luminescence Node Points -->
+  <circle cx="256" cy="264" r="4" fill="#a5f3fc" filter="url(#cyanGlow)"/>
+  <circle cx="256" cy="152" r="3.5" fill="#38bdf8"/>
+  <circle cx="256" cy="360" r="3.5" fill="#38bdf8"/>
+  <circle cx="160" cy="256" r="3" fill="#38bdf8"/>
+  <circle cx="352" cy="256" r="3" fill="#38bdf8"/>
+</svg>

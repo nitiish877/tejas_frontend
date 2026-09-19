@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "Tejas",
+  "short_name": "Tejas",
+  "description": "Tejas Chatbot with fast streaming, clean ChatGPT-inspired interface, and custom user settings.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#212121",
+  "theme_color": "#212121",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

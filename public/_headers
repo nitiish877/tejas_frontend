@@ -1,0 +1,9 @@
+/assets/*.js
+  Content-Type: application/javascript; charset=utf-8
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.js
+  Content-Type: application/javascript; charset=utf-8
+
+/manifest.json
+  Content-Type: application/manifest+json; charset=utf-8

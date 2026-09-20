@@ -1,12 +1,28 @@
 import { ChatSession, UserProfile } from '../types';
 
 const TOKEN_KEY = 'tejas_auth_token_v1';
+const GUEST_ID_KEY = 'tejas_guest_id_v1';
 
 export const getAuthToken = (): string => {
   try {
     return localStorage.getItem(TOKEN_KEY) || '';
   } catch {
     return '';
+  }
+};
+
+// Anonymous guest ki pehchaan ke liye ek chhota random id — koi chat/personal
+// data nahi, sirf ek id jisse server 30-din wali safety-net copy ko match kar sake.
+export const getGuestId = (): string => {
+  try {
+    let id = localStorage.getItem(GUEST_ID_KEY);
+    if (!id) {
+      id = 'guest_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      localStorage.setItem(GUEST_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    return 'guest_temp';
   }
 };
 
@@ -104,3 +120,65 @@ export const chatSignature = (c: ChatSession): string => {
   const last = c.messages[c.messages.length - 1];
   return `${c.updatedAt}|${c.isPinned ? 1 : 0}|${c.title}|${c.messages.length}|${last?.content?.length ?? 0}`;
 };
+
+// ---------------- EPHEMERAL (GUEST / TEMP) CHAT SYNC ----------------
+// Security: guest ki normal chat aur temp chat browser me kahin store nahi hoti.
+// Ye sirf background me server ko bheji jaati hai, jahan 30 din ke liye rakhi jaati
+// hai (safety-net), phir apne aap delete ho jaati hai. Login ho to bhi ye zaroori
+// nahi hai (login required nahi), isliye alag request path use karte hain.
+export const saveEphemeralChat = async (
+  getUrl: UrlBuilder,
+  chat: ChatSession,
+  isTemp: boolean
+): Promise<void> => {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = getAuthToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  else headers['X-Guest-Id'] = getGuestId();
+
+  try {
+    await fetch(getUrl(`/api/ephemeral/chats/${encodeURIComponent(chat.id)}`), {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        title: chat.title,
+        createdAt: chat.createdAt,
+        updatedAt: chat.updatedAt,
+        isTemp,
+        messages: chat.messages,
+      }),
+    });
+  } catch {
+    // Best-effort hai: backend down ho to bhi guest chat UI kaam karti rahe
+  }
+};
+
+// Login/register safal hone ke baad guest ki purani safety-net copies hata do
+// (asli chats ab account me migrate ho chuki hain).
+export const purgeGuestEphemeralChats = async (getUrl: UrlBuilder): Promise<void> => {
+  const token = getAuthToken();
+  const guestId = getGuestId();
+  if (!token || !guestId) return;
+  try {
+    await fetch(getUrl(`/api/ephemeral/guest/${encodeURIComponent(guestId)}`), {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    // best-effort
+  }
+};
+
+// ---------------- SHARE ----------------
+export const createShareLink = (getUrl: UrlBuilder, chatId: string) =>
+  request<{ shareId: string }>(getUrl, `/api/share/${encodeURIComponent(chatId)}`, { method: 'POST' }, true);
+
+export interface SharedChatData {
+  title: string;
+  messages: ChatSession['messages'];
+  ownerName: string;
+  createdAt: number;
+}
+
+export const fetchSharedChat = (getUrl: UrlBuilder, shareId: string) =>
+  request<SharedChatData>(getUrl, `/api/share/${encodeURIComponent(shareId)}`, {}, false);

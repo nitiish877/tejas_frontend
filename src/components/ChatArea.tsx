@@ -3,6 +3,8 @@ import { Message, SubscriptionPlanType, UserProfile } from '../types';
 import { AppVersionInfo, getClientVersion } from '../version';
 import { Logo } from './Logo';
 import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {
   Menu,
   Copy,
@@ -17,6 +19,8 @@ import {
   Lock,
   Radio,
   ArrowUpCircle,
+  Share2,
+  Loader2,
 } from 'lucide-react';
 
 interface ChatAreaProps {
@@ -39,6 +43,9 @@ interface ChatAreaProps {
   serverState?: 'checking' | 'ready' | 'waking_up' | 'offline';
   updateInfo?: AppVersionInfo | null;
   onOpenUpdateModal?: () => void;
+  onShareChat?: () => void;
+  isSharing?: boolean;
+  canShare?: boolean;
 }
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
@@ -61,6 +68,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   serverState = 'ready',
   updateInfo,
   onOpenUpdateModal,
+  onShareChat,
+  isSharing = false,
+  canShare = false,
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -144,6 +154,21 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     navigator.clipboard.writeText(text);
     setCopiedMessageId(id);
     setTimeout(() => setCopiedMessageId(null), 2000);
+  };
+
+  const handleCopyCode = async (code: string, codeId: string) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedMessageId(codeId);
+
+      setTimeout(() => {
+        setCopiedMessageId((current) =>
+          current === codeId ? null : current
+        );
+      }, 2000);
+    } catch (error) {
+      console.error('Failed to copy code:', error);
+    }
   };
 
   const starterSuggestions = [
@@ -337,6 +362,21 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             )}
           </div>
 
+          {/* Share Chat button — colorful, only when there's an actual chat to share */}
+          {onShareChat && canShare && (
+            <button
+              id="header-share-btn"
+              type="button"
+              onClick={onShareChat}
+              disabled={isSharing}
+              title="Chat share karo"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border border-transparent bg-gradient-to-r from-fuchsia-600 via-purple-600 to-indigo-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-indigo-500 text-white transition-all shadow-sm disabled:opacity-60"
+            >
+              {isSharing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">Share</span>
+            </button>
+          )}
+
           {/* Sign In / Register button if guest */}
           {onOpenAuth && (currentUser.provider === 'guest' || !currentUser.email || currentUser.email.includes('guest')) && (
             <button
@@ -501,8 +541,103 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                         <div className="whitespace-pre-wrap break-words">{msg.content}</div>
                       ) : (
                         <div className="prose prose-zinc dark:prose-invert max-w-none break-words leading-relaxed text-sm sm:text-base">
-                          <ReactMarkdown>{msg.content}</ReactMarkdown>
-                          {isStreaming && isLastAssistant && <span className="streaming-cursor" />}
+                          <ReactMarkdown
+                            components={{
+                              code({ className, children, ...props }) {
+                                const match = /language-(\w+)/.exec(className || '');
+                                const code = String(children).replace(/\n$/, '');
+
+                                // Inline code: `something`
+                                if (!match) {
+                                  return (
+                                    <code
+                                      className={`px-1.5 py-0.5 rounded-md text-[0.9em] font-mono ${
+                                        isDark
+                                          ? 'bg-zinc-800 text-pink-300'
+                                          : 'bg-zinc-100 text-pink-600'
+                                      }`}
+                                      {...props}
+                                    >
+                                      {children}
+                                    </code>
+                                  );
+                                }
+
+                                // Fenced code block: ```python ... ```
+                                const language = match[1];
+                                const codeId = `${msg.id}-code-${language}`;
+
+                                return (
+                                  <div
+                                    className={`not-prose my-4 overflow-hidden rounded-xl border shadow-md ${
+                                      isDark ? 'border-zinc-700/60' : 'border-zinc-200'
+                                    }`}
+                                  >
+                                    {/* Code Header — colorful gradient strip so code always stands out in its own box */}
+                                    <div className="flex items-center justify-between px-3 py-2 bg-gradient-to-r from-indigo-600/25 via-blue-600/20 to-purple-600/25 border-b border-zinc-700/50">
+                                      <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide bg-gradient-to-r from-blue-300 via-purple-300 to-pink-300 bg-clip-text text-transparent">
+                                        💻 {language}
+                                      </span>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCopyCode(code, codeId)}
+                                        title="Copy code"
+                                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                                          copiedMessageId === codeId
+                                            ? 'text-emerald-300 bg-emerald-500/15'
+                                            : 'text-zinc-200 bg-white/5 hover:bg-gradient-to-r hover:from-fuchsia-600 hover:to-indigo-600 hover:text-white'
+                                        }`}
+                                      >
+                                        {copiedMessageId === codeId ? (
+                                          <>
+                                            <Check className="w-3.5 h-3.5" />
+                                            Copied
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Copy className="w-3.5 h-3.5" />
+                                            Copy
+                                          </>
+                                        )}
+                                      </button>
+                                    </div>
+
+                                    {/* Highlighted Code — own separate box, always dark for readability */}
+                                    <div className="overflow-x-auto bg-[#0d1117]">
+                                      <SyntaxHighlighter
+                                        language={language}
+                                        style={oneDark}
+                                        customStyle={{
+                                          margin: 0,
+                                          padding: '1rem',
+                                          background: 'transparent',
+                                          fontSize: '0.85rem',
+                                          lineHeight: '1.6',
+                                          minWidth: '100%',
+                                        }}
+                                        codeTagProps={{
+                                          style: {
+                                            fontFamily:
+                                              'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                                          },
+                                        }}
+                                        PreTag="div"
+                                      >
+                                        {code}
+                                      </SyntaxHighlighter>
+                                    </div>
+                                  </div>
+                                );
+                              },
+                            }}
+                          >
+                            {msg.content}
+                          </ReactMarkdown>
+
+                          {isStreaming && isLastAssistant && (
+                            <span className="streaming-cursor" />
+                          )}
                         </div>
                       )}
                     </div>

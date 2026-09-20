@@ -12,6 +12,18 @@ import { PaymentItem, PaymentModal } from './components/PaymentModal';
 import { UpdateModal } from './components/UpdateModal';
 import { getClientVersion, isVersionDismissed, AppVersionInfo } from './version';
 import { playNotificationChime } from './utils/audio';
+import {
+  ApiError,
+  chatSignature,
+  clearAuthToken,
+  deleteServerChat,
+  fetchMe,
+  fetchServerChats,
+  getAuthToken,
+  isGuestUser,
+  saveServerChat,
+  updateMyName,
+} from './utils/api';
 
 const STORAGE_KEY_CHATS = 'llama_chatbot_sessions_v1';
 const STORAGE_KEY_USER = 'llama_chatbot_user_v1';
@@ -30,7 +42,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   customHfToken: '',
   customBackendUrl: '',
   systemPrompt: 'You are Tejas, an intelligent, fast, and polite AI assistant. Always match the response length directly to the user\'s query: keep simple questions concise and direct (1-3 sentences), and provide structured explanations only for complex or coding queries.',
-  responseStyle: 'adaptive',
   selectedModel: 'meta-llama/Llama-3.2-1B-Instruct',
   subscriptionPlan: 'free',
 };
@@ -39,6 +50,8 @@ export default function App() {
   // Persistence state loaders
   const [chats, setChats] = useState<ChatSession[]>(() => {
     try {
+      // Logged-in user: chats sirf cloud DB se aayengi, local storage se nahi
+      if (getAuthToken()) return [];
       const saved = localStorage.getItem(STORAGE_KEY_CHATS);
       if (saved) return JSON.parse(saved);
     } catch (e) {
@@ -79,17 +92,6 @@ export default function App() {
           parsed.systemPrompt.includes('Provide clean, well-formatted answers with markdown, clear headings, and concise explanations.')
         ) {
           parsed.systemPrompt = DEFAULT_SETTINGS.systemPrompt;
-        }
-        if (!parsed.responseStyle) {
-          parsed.responseStyle = 'adaptive';
-        }
-        // Clean out any old hardcoded domains from user's storage
-        if (
-          parsed.customBackendUrl?.includes('railway.app') ||
-          parsed.customBackendUrl?.includes('onrender.com') ||
-          parsed.customBackendUrl?.includes('tejasbacked')
-        ) {
-          parsed.customBackendUrl = '';
         }
         return { ...DEFAULT_SETTINGS, ...parsed };
       }
@@ -198,14 +200,19 @@ export default function App() {
     return base ? `${base}${path}` : path;
   };
 
-  // Save to localStorage
+  // Chats ka local backup SIRF guest ke liye (guest ka account nahi hota, to cloud me save nahi ho sakta).
+  // Logged-in user ki chats local storage me kabhi nahi rakhi jaati, wo sirf cloud DB me rehti hain.
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY_CHATS, JSON.stringify(chats));
+      if (isGuestUser(currentUser)) {
+        localStorage.setItem(STORAGE_KEY_CHATS, JSON.stringify(chats));
+      } else {
+        localStorage.removeItem(STORAGE_KEY_CHATS);
+      }
     } catch (e) {
       console.error('Failed to save chats', e);
     }
-  }, [chats]);
+  }, [chats, currentUser]);
 
   useEffect(() => {
     try {
@@ -405,6 +412,10 @@ export default function App() {
 
   const handleDeleteChat = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (getAuthToken() && !isGuestUser(currentUser)) {
+      deleteServerChat(getApiUrl, id).catch((err) => console.error('Chat delete sync failed', err));
+    }
+    syncedRef.current.delete(id);
     setChats((prev) => prev.filter((c) => c.id !== id));
     if (activeChatId === id) {
       const remaining = chats.filter((c) => c.id !== id);
@@ -414,18 +425,81 @@ export default function App() {
 
   const handleUpdateUserName = (newName: string) => {
     setCurrentUser((prev) => ({ ...prev, name: newName }));
+    if (getAuthToken() && !isGuestUser(currentUser)) {
+      updateMyName(getApiUrl, newName).catch((e) => console.error('Name sync failed', e));
+    }
   };
 
-  const handleLogout = () => {
+  // ---- Server (DB) chat sync: sirf logged-in user ke liye ----
+  const syncedRef = useRef<Map<string, string>>(new Map());
+  const chatsRef = useRef<ChatSession[]>(chats);
+  chatsRef.current = chats;
+
+  const resetToGuest = () => {
+    clearAuthToken();
+    syncedRef.current = new Map();
+    setChats([]);
+    setActiveChatId(null);
+    setIsTempChatActive(false);
     setCurrentUser(DEFAULT_USER);
     localStorage.removeItem(STORAGE_KEY_USER);
+    localStorage.removeItem(STORAGE_KEY_CHATS);
   };
 
-  const handleLoginSuccess = (user: UserProfile) => {
+  // Jo chats abhi server pe save nahi hui unhe upload karo. false return = session expire
+  const syncPendingChats = async (): Promise<boolean> => {
+    if (!getAuthToken()) return true;
+    for (const chat of chatsRef.current) {
+      if (chat.isTemp) continue;
+      const sig = chatSignature(chat);
+      if (syncedRef.current.get(chat.id) === sig) continue;
+      try {
+        await saveServerChat(getApiUrl, chat);
+        syncedRef.current.set(chat.id, sig);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) return false;
+        console.error('Chat sync failed', e);
+      }
+    }
+    return true;
+  };
+
+  // Server ki chats ko local ke saath merge karo (jo naya ho wo jeete)
+  const loadServerChats = async () => {
+    try {
+      const { chats: serverChats } = await fetchServerChats(getApiUrl);
+      setChats((prev) => {
+        const map = new Map(prev.map((c) => [c.id, c]));
+        for (const sc of serverChats) {
+          const local = map.get(sc.id);
+          if (!local || sc.updatedAt >= local.updatedAt) {
+            map.set(sc.id, sc);
+            syncedRef.current.set(sc.id, chatSignature(sc));
+          }
+        }
+        return Array.from(map.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+      });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) resetToGuest();
+      else console.error('Failed to load chats', e);
+    }
+  };
+
+  const handleLogout = async () => {
+    if (isGuestUser(currentUser)) return; // Guest ke liye logout nahi hota
+    await syncPendingChats(); // logout se pehle baaki chats save kar do
+    resetToGuest();
+  };
+
+  const handleLoginSuccess = async (user: UserProfile) => {
     setCurrentUser(user);
     try {
       localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
     } catch (e) {}
+    if (!isGuestUser(user)) {
+      await syncPendingChats(); // login se pehle wali guest chats account me upload
+      await loadServerChats(); // phir account ki purani chats cloud se laao
+    }
   };
 
   const handleSaveCustomToken = (token: string) => {
@@ -520,7 +594,6 @@ export default function App() {
           userToken: settings.customHfToken,
           systemPrompt: settings.systemPrompt,
           preferredModel: settings.selectedModel,
-          responseStyle: settings.responseStyle || 'adaptive',
           userProfile: currentUser,
         }),
         signal: controller.signal,
@@ -543,6 +616,7 @@ export default function App() {
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
       let accumulatedText = '';
+      let streamError = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -560,6 +634,7 @@ export default function App() {
             const dataStr = trimmed.slice(5).trim();
             try {
               const parsed = JSON.parse(dataStr);
+              if (parsed.error) streamError = String(parsed.error);
               if (parsed.text) {
                 accumulatedText += parsed.text;
 
@@ -596,6 +671,10 @@ export default function App() {
         }
       }
 
+      if (streamError && !accumulatedText) {
+        throw new Error(streamError);
+      }
+
       // Mark complete
       if (isTempChatActive) {
         setTempChatMessages((prev) =>
@@ -627,7 +706,11 @@ export default function App() {
         console.log('Stream aborted by user');
       } else {
         console.error('Chat streaming error:', err);
-        const errorText = `\n\n⚠️ *Streaming error: ${err.message || 'Failed to connect to Llama 3.2 model endpoint'}*`;
+        const friendly =
+          err.message === 'Failed to fetch'
+            ? 'Backend se connect nahi ho pa raha. Backend URL (VITE_BACKEND_URL) aur Railway server status check karo.'
+            : err.message || 'Failed to connect to Llama 3.2 model endpoint';
+        const errorText = `\n\n⚠️ *Streaming error: ${friendly}*`;
         if (isTempChatActive) {
           setTempChatMessages((prev) =>
             prev.map((m) =>
@@ -704,7 +787,7 @@ export default function App() {
 
   return (
     <div
-      className={`flex h-screen w-screen overflow-hidden ${
+      className={`flex h-[100dvh] w-full overflow-hidden ${
         isDark ? 'bg-[#212121] text-zinc-100' : 'bg-white text-zinc-900'
       }`}
     >
@@ -730,7 +813,7 @@ export default function App() {
       />
 
       {/* Main Content Area (offset by sidebar on desktop) */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden md:pl-72 sm:md:pl-80 transition-all">
+      <main className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden md:pl-72 sm:md:pl-80 transition-all">
         <ChatArea
           messages={activeMessages}
           isStreaming={isStreaming}
@@ -757,6 +840,7 @@ export default function App() {
               onStopStreaming={handleStopStreaming}
               isDark={isDark}
               isCentered={true}
+              disableAutoType={isAnyModalOpen}
             />
           )}
         />
@@ -769,6 +853,7 @@ export default function App() {
             onStopStreaming={handleStopStreaming}
             isDark={isDark}
             isCentered={false}
+            disableAutoType={isAnyModalOpen}
           />
         )}
       </main>
@@ -794,6 +879,7 @@ export default function App() {
         }
         currentUser={currentUser}
         onLogout={handleLogout}
+        onOpenAuth={() => setAuthModalOpen(true)}
         onOpenSubscription={(plan) => handleOpenSubscription(plan || 'cat')}
         isDark={isDark}
         onCheckForUpdates={() => checkForUpdates(true)}
@@ -814,6 +900,7 @@ export default function App() {
         onClose={() => setAuthModalOpen(false)}
         onLoginSuccess={handleLoginSuccess}
         isDark={isDark}
+        getApiUrl={getApiUrl}
       />
 
       {/* Subscription & Model Plans Modal */}

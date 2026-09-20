@@ -8,6 +8,7 @@ import {
   Bell,
   BellOff,
   LogOut,
+  LogIn,
   X,
   Sparkles,
   RefreshCw,
@@ -18,6 +19,7 @@ import {
   Crown,
 } from 'lucide-react';
 import { getClientVersion } from '../version';
+import { isGuestUser } from '../utils/api';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -26,6 +28,7 @@ interface SettingsModalProps {
   onUpdateSettings: (newSettings: Partial<AppSettings>) => void;
   currentUser: UserProfile;
   onLogout: () => void;
+  onOpenAuth?: () => void;
   onOpenSubscription: (plan?: SubscriptionPlanType) => void;
   isDark: boolean;
   onCheckForUpdates?: () => void;
@@ -39,12 +42,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onUpdateSettings,
   currentUser,
   onLogout,
+  onOpenAuth,
   onOpenSubscription,
   isDark,
   onCheckForUpdates,
   isCheckingUpdates = false,
 }) => {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const isGuest = isGuestUser(currentUser);
 
   if (!isOpen) return null;
 
@@ -304,71 +309,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             })()}
           </div>
 
-          {/* Response Length & Conciseness */}
-          <div
-            className={`p-3.5 rounded-xl border flex flex-col gap-2.5 ${
-              isDark ? 'bg-zinc-900/60 border-zinc-800' : 'bg-zinc-50 border-zinc-200'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-zinc-800 text-zinc-200">
-                <Zap className="w-4 h-4 text-emerald-400" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">Response Length</p>
-                <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                  Scale answer length directly to question complexity
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 mt-0.5">
-              <button
-                id="response-style-adaptive-btn"
-                type="button"
-                onClick={() => onUpdateSettings({ responseStyle: 'adaptive' })}
-                className={`p-2.5 rounded-lg border text-left flex flex-col gap-1 transition-all cursor-pointer ${
-                  (settings.responseStyle || 'adaptive') === 'adaptive'
-                    ? isDark
-                      ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-300 shadow-sm'
-                      : 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-sm'
-                    : isDark
-                      ? 'bg-zinc-800/40 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
-                      : 'bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:border-zinc-300'
-                }`}
-              >
-                <span className="text-xs font-semibold flex items-center gap-1.5">
-                  ⚡ Crisp & Adaptive
-                </span>
-                <span className="text-[10px] opacity-80 leading-snug">
-                  Short & to-the-point for simple queries, detailed only when asked
-                </span>
-              </button>
-
-              <button
-                id="response-style-detailed-btn"
-                type="button"
-                onClick={() => onUpdateSettings({ responseStyle: 'detailed' })}
-                className={`p-2.5 rounded-lg border text-left flex flex-col gap-1 transition-all cursor-pointer ${
-                  settings.responseStyle === 'detailed'
-                    ? isDark
-                      ? 'bg-blue-500/10 border-blue-500/50 text-blue-300 shadow-sm'
-                      : 'bg-blue-50 border-blue-500 text-blue-900 shadow-sm'
-                    : isDark
-                      ? 'bg-zinc-800/40 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
-                      : 'bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:border-zinc-300'
-                }`}
-              >
-                <span className="text-xs font-semibold flex items-center gap-1.5">
-                  📖 In-Depth & Long
-                </span>
-                <span className="text-[10px] opacity-80 leading-snug">
-                  Longer, comprehensive multi-paragraph explanations for everything
-                </span>
-              </button>
-            </div>
-          </div>
-
           {/* Subscription Plans Card */}
           <div
             className={`p-3.5 rounded-xl border flex items-center justify-between ${
@@ -458,12 +398,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="truncate">
                   <p className="text-xs font-medium truncate">{currentUser.name}</p>
                   <p className={`text-[11px] truncate ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                    {currentUser.email}
+                    {isGuest ? 'Guest (chats sirf is device par)' : currentUser.email}
                   </p>
                 </div>
               </div>
 
-              {!showLogoutConfirm ? (
+              {isGuest ? (
+                <button
+                  id="settings-signin-btn"
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenAuth?.();
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-medium border flex items-center gap-1.5 transition-colors shrink-0 ${
+                    isDark
+                      ? 'text-blue-300 border-blue-500/30 hover:bg-blue-500/10'
+                      : 'text-blue-600 border-blue-300 hover:bg-blue-50'
+                  }`}
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>Sign In / Register</span>
+                </button>
+              ) : !showLogoutConfirm ? (
                 <button
                   id="logout-btn"
                   type="button"

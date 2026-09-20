@@ -63,6 +63,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   onOpenUpdateModal,
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const modelMenuRef = useRef<HTMLDivElement>(null);
@@ -118,9 +120,24 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
   const modelInfo = getModelLabel();
 
-  // Auto-scroll to bottom on new messages or stream chunks
+  // NOTE: scrollIntoView() use nahi kar rahe, kyunki wo poore page (header samet) ko upar scroll kar deta hai.
+  // Sirf chat wale container ko scroll karte hain, taaki header hamesha dikhe.
+  const handleMessagesScroll = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current = distanceFromBottom < 120;
+  };
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const lastMsg = messages[messages.length - 1];
+    // User ne message bheja ho to hamesha neeche le jao, warna sirf tab jab user pehle se neeche ho
+    if (lastMsg?.role === 'user') stickToBottomRef.current = true;
+    if (stickToBottomRef.current) {
+      el.scrollTo({ top: el.scrollHeight, behavior: isStreaming ? 'auto' : 'smooth' });
+    }
   }, [messages, isStreaming]);
 
   const handleCopy = (id: string, text: string) => {
@@ -144,7 +161,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
       {/* Top Header Bar */}
       <header
         className={`h-14 px-4 flex items-center justify-between border-b shrink-0 z-10 transition-colors ${
@@ -376,7 +393,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
       {/* New Over-the-Air Update Available Banner */}
       {updateInfo && updateInfo.version && updateInfo.version !== getClientVersion() && (
-        <div className="w-full bg-gradient-to-r from-blue-600/20 via-indigo-600/20 to-blue-600/20 border-b border-blue-500/30 px-4 py-2 flex items-center justify-between text-xs text-blue-200 transition-all shadow-sm">
+        <div className="w-full bg-gradient-to-r from-blue-600/20 via-indigo-600/20 to-blue-600/20 border-b border-blue-500/30 px-4 py-2 flex items-center justify-between text-xs text-blue-200 transition-all shadow-sm shrink-0">
           <div className="flex items-center gap-2">
             <span className="flex h-2 w-2 relative">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
@@ -401,7 +418,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       {/* Main Messages & Center View */}
       {messages.length === 0 ? (
         /* Initial Screen: Chatbox placed in the center of the screen as requested */
-        <div className="flex-1 flex flex-col items-center justify-center px-4 overflow-y-auto">
+        <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 overflow-y-auto">
           <div className="max-w-2xl w-full text-center space-y-6 animate-in fade-in duration-200 py-6">
             <div className="flex justify-center mb-2">
               <Logo size="lg" glowing={false} />
@@ -439,7 +456,11 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         </div>
       ) : (
         /* Conversation Message History */
-        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 space-y-6">
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleMessagesScroll}
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-6 py-6 space-y-6"
+        >
           <div className="max-w-3xl mx-auto space-y-6">
             {messages.map((msg, index) => {
               const isUser = msg.role === 'user';

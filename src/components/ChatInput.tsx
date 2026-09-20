@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ArrowUp, Square, Smile } from 'lucide-react';
 import { EmojiPicker } from './EmojiPicker';
 
@@ -8,6 +8,7 @@ interface ChatInputProps {
   onStopStreaming: () => void;
   isDark: boolean;
   isCentered?: boolean;
+  disableAutoType?: boolean;
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
@@ -16,13 +17,53 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   onStopStreaming,
   isDark,
   isCentered = false,
+  disableAutoType = false,
 }) => {
   const [text, setText] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Auto-focus has been completely removed as requested: "bottom me auto focus remove kar do"
+  // Auto-type: cursor input box me na ho aur user keyboard se kuch type/paste kare to
+  // wo apne aap chat box me focus hokar likha jaye.
+  useEffect(() => {
+    if (disableAutoType) return;
+
+    const isEditable = (el: EventTarget | null) => {
+      const node = el as HTMLElement | null;
+      if (!node || !node.tagName) return false;
+      const tag = node.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || node.isContentEditable;
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isEditable(e.target)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+      // Sirf printable characters (a, 1, ?, Hindi letters, space...) par focus karo
+      if (e.key.length !== 1) return;
+      const ta = textareaRef.current;
+      if (!ta) return;
+      ta.focus();
+      // Space dabane par page scroll na ho
+      if (e.key === ' ') e.preventDefault(), setText((prev) => prev + ' ');
+    };
+
+    const onPaste = (e: ClipboardEvent) => {
+      if (isEditable(e.target)) return;
+      const pasted = e.clipboardData?.getData('text');
+      if (!pasted) return;
+      e.preventDefault();
+      setText((prev) => prev + pasted);
+      textareaRef.current?.focus();
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('paste', onPaste);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('paste', onPaste);
+    };
+  }, [disableAutoType]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setText(e.target.value);

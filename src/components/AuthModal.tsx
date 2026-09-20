@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UserProfile } from '../types';
 import { Logo } from './Logo';
+import { registerAccount, loginAccount, setAuthToken } from '../utils/api';
 import {
   Mail,
   Lock,
@@ -19,6 +20,7 @@ interface AuthModalProps {
   onLoginSuccess: (user: UserProfile) => void;
   isDark: boolean;
   initialMode?: 'signin' | 'register';
+  getApiUrl: (path: string) => string;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -27,6 +29,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onLoginSuccess,
   isDark,
   initialMode = 'signin',
+  getApiUrl,
 }) => {
   const [mode, setMode] = useState<'signin' | 'register'>(initialMode);
   const [name, setName] = useState('');
@@ -39,20 +42,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) return;
+    if (!email.trim() || !password) return;
     setErrorMessage(null);
     setLoading(true);
 
     try {
-      const displayName =
-        mode === 'register' ? name.trim() || email.split('@')[0] : email.split('@')[0];
-      const user: UserProfile = {
-        id: 'user_' + Date.now(),
-        name: displayName,
-        email: email.trim(),
-        provider: 'email',
-      };
-      onLoginSuccess(user);
+      const result =
+        mode === 'register'
+          ? await registerAccount(getApiUrl, { name: name.trim(), email: email.trim(), password })
+          : await loginAccount(getApiUrl, { email: email.trim(), password });
+
+      setAuthToken(result.token);
+      onLoginSuccess(result.user);
+      setPassword('');
       onClose();
     } catch (err: any) {
       console.error('Auth error:', err);
@@ -231,10 +233,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   id="auth-password-input"
                   type="password"
                   required
-                  minLength={6}
+                  minLength={8}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="•••••••• (min. 6 characters)"
+                  placeholder="•••••••• (min. 8 characters)"
                   className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-xs sm:text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-all ${
                     isDark
                       ? 'bg-zinc-900 border-zinc-700 text-zinc-100 placeholder-zinc-500'

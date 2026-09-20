@@ -1,9 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Copy, Check, Loader2, AlertTriangle } from 'lucide-react';
+import { Loader2, AlertTriangle } from 'lucide-react';
 import { Logo } from './Logo';
+import { MarkdownMessage } from './MarkdownMessage';
 import { fetchSharedChat, SharedChatData } from '../utils/api';
 
 interface SharedChatViewProps {
@@ -18,7 +16,6 @@ export const SharedChatView: React.FC<SharedChatViewProps> = ({ shareId, getApiU
   const [data, setData] = useState<SharedChatData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -36,12 +33,6 @@ export const SharedChatView: React.FC<SharedChatViewProps> = ({ shareId, getApiU
       mounted = false;
     };
   }, [shareId, getApiUrl]);
-
-  const handleCopyCode = (code: string, id: string) => {
-    navigator.clipboard.writeText(code);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 2000);
-  };
 
   return (
     <div className={`min-h-[100dvh] w-full flex flex-col ${isDark ? 'bg-[#212121] text-zinc-100' : 'bg-white text-zinc-900'}`}>
@@ -118,69 +109,12 @@ export const SharedChatView: React.FC<SharedChatViewProps> = ({ shareId, getApiU
                       {isUser ? (
                         <div className="whitespace-pre-wrap break-words">{msg.content}</div>
                       ) : (
-                        <div className="prose prose-zinc dark:prose-invert max-w-none break-words leading-relaxed text-sm sm:text-base">
-                          <ReactMarkdown
-                            components={{
-                              code({ className, children, ...props }) {
-                                const match = /language-(\w+)/.exec(className || '');
-                                const code = String(children).replace(/\n$/, '');
-                                if (!match) {
-                                  return (
-                                    <code
-                                      className={`px-1.5 py-0.5 rounded-md text-[0.9em] font-mono ${
-                                        isDark ? 'bg-zinc-800 text-pink-300' : 'bg-zinc-100 text-pink-600'
-                                      }`}
-                                      {...props}
-                                    >
-                                      {children}
-                                    </code>
-                                  );
-                                }
-                                const language = match[1];
-                                const codeId = `${idx}-code-${language}`;
-                                return (
-                                  <div className="not-prose my-4 overflow-hidden rounded-xl border shadow-sm border-zinc-700/60">
-                                    <div className="flex items-center justify-between px-3 py-2 bg-gradient-to-r from-indigo-600/20 via-blue-600/15 to-purple-600/20 border-b border-zinc-700/60">
-                                      <span className="text-xs font-semibold uppercase tracking-wide text-blue-300">
-                                        {language}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleCopyCode(code, codeId)}
-                                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                                          copiedId === codeId
-                                            ? 'text-emerald-400 bg-emerald-500/10'
-                                            : 'text-zinc-300 hover:text-white hover:bg-zinc-700/60'
-                                        }`}
-                                      >
-                                        {copiedId === codeId ? (
-                                          <>
-                                            <Check className="w-3.5 h-3.5" /> Copied
-                                          </>
-                                        ) : (
-                                          <>
-                                            <Copy className="w-3.5 h-3.5" /> Copy
-                                          </>
-                                        )}
-                                      </button>
-                                    </div>
-                                    <div className="overflow-x-auto bg-[#0d1117]">
-                                      <SyntaxHighlighter
-                                        language={language}
-                                        style={oneDark}
-                                        customStyle={{ margin: 0, padding: '1rem', background: 'transparent', fontSize: '0.85rem', lineHeight: '1.6', minWidth: '100%' }}
-                                        PreTag="div"
-                                      >
-                                        {code}
-                                      </SyntaxHighlighter>
-                                    </div>
-                                  </div>
-                                );
-                              },
-                            }}
-                          >
-                            {msg.content}
-                          </ReactMarkdown>
+                        <div
+                          className={`prose prose-zinc ${
+                            isDark ? 'prose-invert' : ''
+                          } max-w-none break-words leading-relaxed text-sm sm:text-base prose-headings:font-semibold prose-headings:mt-5 prose-headings:mb-2 prose-p:my-2 prose-li:my-0.5 prose-code:before:content-none prose-code:after:content-none`}
+                        >
+                          <MarkdownMessage content={msg.content} isDark={isDark} />
                         </div>
                       )}
                     </div>

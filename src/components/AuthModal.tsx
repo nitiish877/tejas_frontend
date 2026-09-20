@@ -21,6 +21,7 @@ interface AuthModalProps {
   isDark: boolean;
   initialMode?: 'signin' | 'register';
   getApiUrl: (path: string) => string;
+  notice?: string | null;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -30,6 +31,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   isDark,
   initialMode = 'signin',
   getApiUrl,
+  notice,
 }) => {
   const [mode, setMode] = useState<'signin' | 'register'>(initialMode);
   const [name, setName] = useState('');
@@ -155,6 +157,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 : 'Sign in with your email to access your chats'}
             </p>
           </div>
+
+          {/* Notice message (e.g. share link context) */}
+          {notice && (
+            <div
+              className={`mb-3 rounded-xl border px-3 py-2 text-xs ${
+                isDark ? 'bg-blue-500/10 border-blue-500/30 text-blue-200' : 'bg-blue-50 border-blue-200 text-blue-800'
+              }`}
+            >
+              🔗 {notice}
+            </div>
+          )}
 
           {/* Error Message Display */}
           {errorMessage && (

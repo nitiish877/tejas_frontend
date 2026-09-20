@@ -18,6 +18,7 @@ import {
   chatSignature,
   clearAuthToken,
   createShareLink,
+  deleteShareLink,
   deleteServerChat,
   fetchMe,
   fetchServerChats,
@@ -28,6 +29,7 @@ import {
   saveServerChat,
   updateMyName,
 } from './utils/api';
+import { copyText } from './utils/clipboard';
 
 const STORAGE_KEY_CHATS = 'llama_chatbot_sessions_v1';
 const STORAGE_KEY_USER = 'llama_chatbot_user_v1';
@@ -130,6 +132,11 @@ export default function App() {
   const [shareLink, setShareLink] = useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
+  const [shareId, setShareId] = useState<string | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
+  // Guest ne share dabaya to chat id yaad rakho, login ke baad wahi chat share ho jaye
+  const pendingShareRef = useRef<string | null>(null);
 
   // Modals & Drawers state
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -555,7 +562,37 @@ export default function App() {
     resetToGuest();
   };
 
+  // ---- Share helpers ----
+  const buildShareUrl = (id: string): string => {
+    const site = ((import.meta.env.VITE_PUBLIC_SITE_URL as string) || window.location.origin).replace(/\/+$/, '');
+    return `${site}/share/${id}`;
+  };
+
+  const createShareFor = async (chatId: string) => {
+    setIsSharing(true);
+    setShareError(null);
+    setShareLink(null);
+    setShareId(null);
+    setShareCopied(false);
+    try {
+      const synced = await syncPendingChats();
+      if (!synced) throw new ApiError('Session expire ho gaya. Dobara Sign In karo.', 401);
+      const { shareId: newId } = await createShareLink(getApiUrl, chatId);
+      const link = buildShareUrl(newId);
+      setShareId(newId);
+      setShareLink(link);
+      setShareModalOpen(true);
+      if (await copyText(link)) setShareCopied(true);
+    } catch (e: any) {
+      setShareError(e?.message || 'Share link nahi ban paya. Dobara try karo.'); // asli error dikhao
+      setShareModalOpen(true);
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
   const handleLoginSuccess = async (user: UserProfile) => {
+    const pendingShareChatId = pendingShareRef.current; // AuthModal band hote hi clear ho jata hai
     setCurrentUser(user);
     try {
       localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
@@ -566,35 +603,33 @@ export default function App() {
       // Ab guest ki safety-net copy (ephemeral_chats) hata do — asli data account me migrate ho chuka hai.
       // Note: Temp Chat isse touch nahi hoti — wo jaanbujhke account me kabhi save nahi hoti.
       purgeGuestEphemeralChats(getApiUrl);
+      // Guest ne login se pehle Share dabaya tha to ab wahi chat share kar do
+      if (pendingShareChatId) await createShareFor(pendingShareChatId);
     }
   };
 
   // Chat share karna: guest ke liye login/signup zaroori hai. Sign in karne ke baad
   // wahi chat dobara share karni padegi (jo already normal behaviour hai).
   const handleShareChat = async () => {
-    if (isTempChatActive) return; // Temp chat share nahi hoti
+    if (isTempChatActive || !activeChatId) return;
     if (isGuestUser(currentUser)) {
+      pendingShareRef.current = activeChatId;
+      setAuthNotice('Chat share karne ke liye Sign In ya Register karo. Login hote hi ye chat tumhare account me save hokar share ho jayegi.');
       setAuthModalOpen(true);
       return;
     }
-    if (!activeChatId) return;
+    await createShareFor(activeChatId);
+  };
 
-    setIsSharing(true);
-    setShareError(null);
+  const handleStopSharing = async () => {
+    if (!shareId) return;
     try {
-      await syncPendingChats(); // pehle latest messages server pe save karo, phir share banao
-      const { shareId } = await createShareLink(getApiUrl, activeChatId);
-      const link = `${window.location.origin}/share/${shareId}`;
-      setShareLink(link);
-      setShareModalOpen(true);
-      try {
-        await navigator.clipboard.writeText(link);
-      } catch {}
-    } catch (e) {
-      setShareError(e instanceof ApiError ? e.message : 'Share link nahi ban paya. Dobara try karo.');
-      setShareModalOpen(true);
-    } finally {
-      setIsSharing(false);
+      await deleteShareLink(getApiUrl, shareId);
+      setShareLink(null);
+      setShareId(null);
+      setShareModalOpen(false);
+    } catch (e: any) {
+      setShareError(e?.message || 'Link band nahi ho paya.');
     }
   };
 
@@ -1002,10 +1037,15 @@ export default function App() {
       {/* Auth Modal (Google OAuth, Email/Password, Guest mode) */}
       <AuthModal
         isOpen={authModalOpen}
-        onClose={() => setAuthModalOpen(false)}
+        onClose={() => {
+          setAuthModalOpen(false);
+          setAuthNotice(null);
+          pendingShareRef.current = null;
+        }}
         onLoginSuccess={handleLoginSuccess}
         isDark={isDark}
         getApiUrl={getApiUrl}
+        notice={authNotice}
       />
 
       {/* Subscription & Model Plans Modal */}
@@ -1061,12 +1101,19 @@ export default function App() {
                   <span className="truncate flex-1">{shareLink}</span>
                   <button
                     type="button"
-                    onClick={() => shareLink && navigator.clipboard.writeText(shareLink)}
+                    onClick={async () => { if (shareLink && (await copyText(shareLink))) { setShareCopied(true); setTimeout(() => setShareCopied(false), 2000); } }}
                     className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white transition-all"
                   >
-                    Copy
+                    {shareCopied ? 'Copied ✓' : 'Copy'}
                   </button>
                 </div>
+                <button
+                  type="button"
+                  onClick={handleStopSharing}
+                  className="w-full py-1.5 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-500/10 border border-rose-500/30 transition-colors"
+                >
+                  🚫 Sharing band karo (link kaam karna band)
+                </button>
               </>
             )}
             <button

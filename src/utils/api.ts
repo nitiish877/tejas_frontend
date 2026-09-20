@@ -73,6 +73,15 @@ async function request<T>(getUrl: UrlBuilder, path: string, options: RequestInit
   if (!res.ok) {
     throw new ApiError(data?.error || `Request failed (${res.status})`, res.status);
   }
+
+  // 200 aaya par JSON nahi: matlab /api call backend tak nahi pahunchi (host ne index.html de diya)
+  if (data === null) {
+    throw new ApiError(
+      'Backend se galat response aaya (JSON ki jagah page mila). VITE_BACKEND_URL ya /api proxy (rewrite) check karo.',
+      502
+    );
+  }
+
   return data as T;
 }
 
@@ -172,6 +181,9 @@ export const purgeGuestEphemeralChats = async (getUrl: UrlBuilder): Promise<void
 // ---------------- SHARE ----------------
 export const createShareLink = (getUrl: UrlBuilder, chatId: string) =>
   request<{ shareId: string }>(getUrl, `/api/share/${encodeURIComponent(chatId)}`, { method: 'POST' }, true);
+
+export const deleteShareLink = (getUrl: UrlBuilder, shareId: string) =>
+  request<{ ok: boolean }>(getUrl, `/api/share/${encodeURIComponent(shareId)}`, { method: 'DELETE' }, true);
 
 export interface SharedChatData {
   title: string;

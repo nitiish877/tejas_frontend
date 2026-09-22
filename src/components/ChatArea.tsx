@@ -32,6 +32,7 @@ interface ChatAreaProps {
   selectedModel?: string;
   onSelectModel?: (modelId: string) => void;
   subscriptionPlan?: SubscriptionPlanType;
+  ownedPlans?: SubscriptionPlanType[];
   subscriptionExpiresAt?: number;
   onOpenSubscription?: (plan?: SubscriptionPlanType) => void;
   onOpenSettings?: () => void;
@@ -57,6 +58,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   selectedModel = 'meta-llama/Llama-3.2-1B-Instruct',
   onSelectModel,
   subscriptionPlan = 'free',
+  ownedPlans = [],
   subscriptionExpiresAt,
   onOpenSubscription,
   onOpenSettings,
@@ -128,8 +130,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
   const modelInfo = getModelLabel();
 
-  // Only show the models the user actually owns: 1B (always free) plus whatever
-  // paid plan is currently active. Subscribing happens only via the Subscription modal.
+  // Only show the models the user actually owns: 1B (always free) plus every
+  // paid plan they've purchased. Subscribing happens only via the Subscription modal.
   const availableModels = useMemo(() => {
     const list = [
       {
@@ -141,7 +143,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         plan: 'free' as SubscriptionPlanType,
       },
     ];
-    if (subscriptionPlan === 'cat') {
+    if (ownedPlans.includes('cat')) {
       list.push({
         id: 'meta-llama/Llama-3.2-3B-Instruct',
         name: 'Cat (3B)',
@@ -150,7 +152,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         badgeClass: 'bg-purple-500/20 text-purple-300 border border-purple-500/30',
         plan: 'cat' as SubscriptionPlanType,
       });
-    } else if (subscriptionPlan === 'chetak') {
+    }
+    if (ownedPlans.includes('chetak')) {
       list.push({
         id: 'meta-llama/Llama-3.1-8B-Instruct',
         name: 'Chetak (8B)',
@@ -159,7 +162,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         badgeClass: 'bg-blue-500/20 text-blue-300 border border-blue-500/30',
         plan: 'chetak' as SubscriptionPlanType,
       });
-    } else if (subscriptionPlan === 'arka') {
+    }
+    if (ownedPlans.includes('arka')) {
       list.push({
         id: 'meta-llama/Llama-3.3-70B-Instruct',
         name: 'Arka (70B)',
@@ -170,7 +174,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       });
     }
     return list;
-  }, [subscriptionPlan]);
+  }, [ownedPlans]);
 
   // Track whether the user is near the bottom of the scroll container.
   // If yes, we auto-scroll on new messages; if not, we leave their scroll position alone.

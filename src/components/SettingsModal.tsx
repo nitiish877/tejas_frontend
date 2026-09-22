@@ -60,8 +60,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   ];
 
   const handleModelChange = (modelId: string) => {
-    // Immediately switch the active model as requested by user
-    onUpdateSettings({ selectedModel: modelId });
+    // Keep the active-plan in sync with the newly selected model
+    const planMap: Record<string, SubscriptionPlanType> = {
+      'meta-llama/Llama-3.2-1B-Instruct': 'free',
+      'meta-llama/Llama-3.2-3B-Instruct': 'cat',
+      'meta-llama/Llama-3.1-8B-Instruct': 'chetak',
+      'meta-llama/Llama-3.3-70B-Instruct': 'arka',
+    };
+    onUpdateSettings({
+      selectedModel: modelId,
+      subscriptionPlan: planMap[modelId] || 'free',
+    });
   };
 
   const getPlanBadge = () => {
@@ -212,7 +221,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div>
                   <p className="text-sm font-medium">Active AI Model</p>
                   <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                    {settings.subscriptionPlan && settings.subscriptionPlan !== 'free'
+                    {settings.ownedPlans && settings.ownedPlans.length > 0
                       ? 'Switch between your free and active subscription models'
                       : 'Upgrade a plan to unlock more models'}
                   </p>
@@ -236,17 +245,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <option value="meta-llama/Llama-3.2-1B-Instruct">
                 1B (Free Tier - Fast & Lightweight)
               </option>
-              {settings.subscriptionPlan === 'cat' && (
+              {(settings.ownedPlans || []).includes('cat') && (
                 <option value="meta-llama/Llama-3.2-3B-Instruct">
                   Cat (3B - Active Subscription)
                 </option>
               )}
-              {settings.subscriptionPlan === 'chetak' && (
+              {(settings.ownedPlans || []).includes('chetak') && (
                 <option value="meta-llama/Llama-3.1-8B-Instruct">
                   Chetak (8B - Active Subscription)
                 </option>
               )}
-              {settings.subscriptionPlan === 'arka' && (
+              {(settings.ownedPlans || []).includes('arka') && (
                 <option value="meta-llama/Llama-3.3-70B-Instruct">
                   Arka (70B - Active Subscription)
                 </option>

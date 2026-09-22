@@ -42,7 +42,20 @@ export interface AppSettings {
   subscriptionStartedAt?: number;
   subscriptionExpiresAt?: number;
   lastPaymentId?: string;
+  // Every plan the user has bought (may be multiple — Cat + Chetak + Arka all at once)
+  ownedPlans?: SubscriptionPlanType[];
+  // Expiry timestamp per plan, so each plan expires independently
+  planExpiries?: Partial<Record<SubscriptionPlanType, number>>;
 }
+
+// Model → plan mapping (used to keep the "active plan" in sync with the selected model)
+export const MODEL_TO_PLAN: Record<string, SubscriptionPlanType> = {
+  'meta-llama/Llama-3.2-1B-Instruct': 'free',
+  'meta-llama/Llama-3.2-3B-Instruct': 'cat',
+  'meta-llama/Llama-3.1-8B-Instruct': 'chetak',
+  'meta-llama/Llama-3.3-70B-Instruct': 'arka',
+  'meta-llama/Llama-3-70B-Instruct': 'arka',
+};
 
 export interface HFStatus {
   status: string;

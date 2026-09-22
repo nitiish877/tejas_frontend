@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChatSession, Message, UserProfile, AppSettings, HFStatus, ThemeMode, SubscriptionPlanType } from './types';
+import { ChatSession, Message, UserProfile, AppSettings, HFStatus, ThemeMode, SubscriptionPlanType, MODEL_TO_PLAN } from './types';
 import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
 import { ChatInput } from './components/ChatInput';
@@ -50,6 +50,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   systemPrompt: 'You are Tejas, an intelligent, fast, and polite AI assistant. Always match the response length directly to the user\'s query: keep simple questions concise and direct (1-3 sentences), and provide structured explanations only for complex or coding queries.',
   selectedModel: 'meta-llama/Llama-3.2-1B-Instruct',
   subscriptionPlan: 'free',
+  ownedPlans: [],
+  planExpiries: {},
 };
 
 export default function App() {
@@ -99,6 +101,22 @@ export default function App() {
           parsed.systemPrompt.includes('Provide clean, well-formatted answers with markdown, clear headings, and concise explanations.')
         ) {
           parsed.systemPrompt = DEFAULT_SETTINGS.systemPrompt;
+        }
+        // MIGRATION: seed ownedPlans from the old single-plan field so already-paid
+        // users don't lose their plan after this update.
+        if (!Array.isArray(parsed.ownedPlans)) {
+          if (parsed.subscriptionPlan && parsed.subscriptionPlan !== 'free') {
+            parsed.ownedPlans = [parsed.subscriptionPlan];
+            parsed.planExpiries = {
+              [parsed.subscriptionPlan]:
+                parsed.subscriptionExpiresAt || Date.now() + 30 * 24 * 60 * 60 * 1000,
+            };
+          } else {
+            parsed.ownedPlans = [];
+            parsed.planExpiries = {};
+          }
+        } else if (!parsed.planExpiries) {
+          parsed.planExpiries = {};
         }
         return { ...DEFAULT_SETTINGS, ...parsed };
       }
@@ -168,11 +186,12 @@ export default function App() {
   };
 
   const handleSelectFreePlan = () => {
+    // Switching to Free only changes the *active* model — the paid plans stay owned
+    // until their own expiry passes (see the auto-expiry effect below).
     setSettings((prev) => ({
       ...prev,
       subscriptionPlan: 'free',
       selectedModel: 'meta-llama/Llama-3.2-1B-Instruct',
-      subscriptionExpiresAt: undefined,
     }));
   };
 
@@ -184,40 +203,72 @@ export default function App() {
   ) => {
     const now = Date.now();
     const expiresAt = now + durationDays * 24 * 60 * 60 * 1000;
-    setSettings((prev) => ({
-      ...prev,
-      subscriptionPlan: plan,
-      selectedModel: modelId,
-      subscriptionStartedAt: now,
-      subscriptionExpiresAt: expiresAt,
-      lastPaymentId: paymentId,
-    }));
+    setSettings((prev) => {
+      // Add the plan to the user's owned list (keeps previous plans intact)
+      const owned = new Set(prev.ownedPlans || []);
+      owned.add(plan);
+      return {
+        ...prev,
+        subscriptionPlan: plan,
+        selectedModel: modelId,
+        subscriptionStartedAt: now,
+        subscriptionExpiresAt: expiresAt,
+        lastPaymentId: paymentId,
+        ownedPlans: Array.from(owned),
+        planExpiries: {
+          ...(prev.planExpiries || {}),
+          [plan]: expiresAt,
+        },
+      };
+    });
     playNotificationChime();
   };
 
-  // Auto-revert to free tier once the subscription duration expires
+  // Independently expire each owned plan as its own expiry passes.
+  // If the currently selected plan expires, fall back to Free (1B).
   useEffect(() => {
     const checkSubscriptionExpiry = () => {
-      if (
-        settings.subscriptionPlan &&
-        settings.subscriptionPlan !== 'free' &&
-        settings.subscriptionExpiresAt
-      ) {
-        if (Date.now() > settings.subscriptionExpiresAt) {
-          setSettings((prev) => ({
-            ...prev,
-            subscriptionPlan: 'free',
-            selectedModel: 'meta-llama/Llama-3.2-1B-Instruct',
-            subscriptionExpiresAt: undefined,
-          }));
+      setSettings((prev) => {
+        const now = Date.now();
+        const owned = prev.ownedPlans || [];
+        const expiries = prev.planExpiries || {};
+
+        const active = owned.filter((p) => {
+          if (p === 'free') return true;
+          const exp = expiries[p];
+          return !exp || exp > now;
+        });
+
+        // Nothing expired → return the same object to avoid re-renders
+        if (active.length === owned.length) return prev;
+
+        const newExpiries: Partial<Record<SubscriptionPlanType, number>> = { ...expiries };
+        for (const p of owned) {
+          if (p === 'free') continue;
+          const exp = expiries[p];
+          if (exp && exp <= now) delete newExpiries[p];
         }
-      }
+
+        const currentPlan = prev.subscriptionPlan || 'free';
+        const stillOwned = currentPlan === 'free' || active.includes(currentPlan);
+
+        return {
+          ...prev,
+          ownedPlans: active,
+          planExpiries: newExpiries,
+          subscriptionPlan: stillOwned ? currentPlan : 'free',
+          selectedModel: stillOwned
+            ? prev.selectedModel
+            : 'meta-llama/Llama-3.2-1B-Instruct',
+          subscriptionExpiresAt: stillOwned ? prev.subscriptionExpiresAt : undefined,
+        };
+      });
     };
 
     checkSubscriptionExpiry();
     const timer = setInterval(checkSubscriptionExpiry, 5000);
     return () => clearInterval(timer);
-  }, [settings.subscriptionPlan, settings.subscriptionExpiresAt]);
+  }, []); // interval reads latest state via the setState callback
 
   // HF status info from backend
   const [hfStatus, setHfStatus] = useState<HFStatus | null>(null);
@@ -530,6 +581,8 @@ export default function App() {
       subscriptionExpiresAt: undefined,
       subscriptionStartedAt: undefined,
       lastPaymentId: undefined,
+      ownedPlans: [],
+      planExpiries: {},
     }));
     localStorage.removeItem(STORAGE_KEY_USER);
     localStorage.removeItem(STORAGE_KEY_CHATS);
@@ -980,8 +1033,15 @@ export default function App() {
           onRegenerate={handleRegenerate}
           onSelectPromptSuggestion={(prompt) => handleSendMessage(prompt)}
           selectedModel={settings.selectedModel}
-          onSelectModel={(modelId) => setSettings((prev) => ({ ...prev, selectedModel: modelId }))}
+          onSelectModel={(modelId) =>
+            setSettings((prev) => ({
+              ...prev,
+              selectedModel: modelId,
+              subscriptionPlan: MODEL_TO_PLAN[modelId] || 'free',
+            }))
+          }
           subscriptionPlan={settings.subscriptionPlan || 'free'}
+          ownedPlans={settings.ownedPlans || []}
           subscriptionExpiresAt={settings.subscriptionExpiresAt}
           onOpenSubscription={(plan) => handleOpenSubscription(plan || 'cat')}
           onOpenSettings={() => setSettingsOpen(true)}

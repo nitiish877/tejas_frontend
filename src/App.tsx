@@ -56,9 +56,9 @@ export default function App() {
   // Persistence state loaders
   const [chats, setChats] = useState<ChatSession[]>(() => {
     try {
-      // Purani guest chats (pehle localStorage me jama hoti thi) hata do
+      // Remove any legacy guest chats that used to be stored in localStorage
       localStorage.removeItem(STORAGE_KEY_CHATS);
-      // Guest chat sirf is tab/session tak: tab/app band hote hi khatam
+      // Guest chats live only in this tab/session — closing the tab clears them
       const saved = sessionStorage.getItem(STORAGE_KEY_CHATS);
       if (saved) return JSON.parse(saved);
     } catch (e) {
@@ -93,7 +93,7 @@ export default function App() {
       const saved = localStorage.getItem(STORAGE_KEY_SETTINGS);
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Automatically upgrade to adaptive prompt if still on old generic prompt
+        // Automatically upgrade to the adaptive prompt if the user is still on the old generic one
         if (
           !parsed.systemPrompt ||
           parsed.systemPrompt.includes('Provide clean, well-formatted answers with markdown, clear headings, and concise explanations.')
@@ -114,7 +114,7 @@ export default function App() {
   const [isStreaming, setIsStreaming] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // "/share/<id>" URL: koi bhi (login ho ya guest) is link ko khole to read-only shared chat dikhao.
+  // "/share/<id>" URL: anyone (logged in or guest) opening this link sees a read-only shared chat.
   const [sharedChatId] = useState<string | null>(() => {
     try {
       const m = window.location.pathname.match(/^\/share\/([a-zA-Z0-9]+)/);
@@ -124,7 +124,7 @@ export default function App() {
     }
   });
 
-  // Stable id jo poori Temp Chat session ke liye same rehti hai (ephemeral sync ke liye)
+  // Stable id that stays the same for the entire Temp Chat session (used for ephemeral sync)
   const tempChatIdRef = useRef<string>('temp_' + Date.now());
 
   // Share modal state
@@ -135,10 +135,10 @@ export default function App() {
   const [shareId, setShareId] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
-  // Guest ne share dabaya to chat id yaad rakho, login ke baad wahi chat share ho jaye
+  // If a guest taps Share, remember the chat id so we can share it right after they sign in
   const pendingShareRef = useRef<string | null>(null);
 
-  // Modals & Drawers state
+  // Modals & drawers state
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userProfileOpen, setUserProfileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -187,7 +187,7 @@ export default function App() {
     playNotificationChime();
   };
 
-  // Subscription duration auto-revert: automatically revert to free tier once month/duration finishes
+  // Auto-revert to free tier once the subscription duration expires
   useEffect(() => {
     const checkSubscriptionExpiry = () => {
       if (
@@ -211,10 +211,10 @@ export default function App() {
     return () => clearInterval(timer);
   }, [settings.subscriptionPlan, settings.subscriptionExpiresAt]);
 
-  // HF Status info from backend
+  // HF status info from backend
   const [hfStatus, setHfStatus] = useState<HFStatus | null>(null);
 
-  // Helper to resolve backend endpoint from environment variables (e.g. VITE_BACKEND_URL on Netlify) or custom config
+  // Resolve the backend endpoint from env vars (e.g. VITE_BACKEND_URL on Netlify/Vercel) or a custom config
   const getApiUrl = (path: string): string => {
     let base = (
       import.meta.env.VITE_BACKEND_URL ||
@@ -223,7 +223,7 @@ export default function App() {
       ''
     ).trim().replace(/\/$/, '');
 
-    // If user provided a domain without protocol, auto-prepend https://
+    // If the user provided a bare domain without protocol, prepend https://
     if (base && !base.startsWith('http://') && !base.startsWith('https://')) {
       base = `https://${base}`;
     }
@@ -231,8 +231,8 @@ export default function App() {
     return base ? `${base}${path}` : path;
   };
 
-  // Guest ki chat temporary hai: sirf sessionStorage me (tab/app band = khatam, refresh pe bachi rehti hai).
-  // Logged-in user ki chats browser me kahin nahi rakhi jaati, wo sirf cloud DB me rehti hain.
+  // Guest chats are session-scoped: they live only in sessionStorage (cleared when the tab closes,
+  // but preserved on refresh). Logged-in user chats are never stored in the browser — only in the cloud DB.
   useEffect(() => {
     try {
       if (isGuestUser(currentUser)) {
@@ -246,24 +246,24 @@ export default function App() {
     }
   }, [chats, currentUser]);
 
-  // SECURITY: Guest user ki normal chat browser me sirf is tab tak rehti hai (upar wala effect).
-  // Isko permanently kahin store nahi karte — background me sirf server ko ek 30-din wali
-  // safety-net copy bheji jaati hai (ephemeral_chats table), jo user ko wapas kabhi nahi dikhai
-  // jaati aur khud-ba-khud 30 din baad delete ho jaati hai.
+  // SECURITY: A guest's normal chats live only in the current tab (see the effect above).
+  // They are never stored permanently. In the background, only a 30-day safety-net copy is
+  // pushed to the server (ephemeral_chats table), which is never surfaced back to the user
+  // and auto-deletes after 30 days.
   useEffect(() => {
     if (!isGuestUser(currentUser)) return;
     const timer = setTimeout(() => {
       chats.forEach((chat) => {
         if (chat.messages.length > 0) saveEphemeralChat(getApiUrl, chat, false);
       });
-    }, 1500); // debounce: baar baar keystroke pe hit na ho
+    }, 1500); // debounce so we don't fire on every keystroke
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chats, currentUser]);
 
-  // SECURITY: Temp Chat (guest ho ya logged-in) kabhi bhi permanently save nahi hoti aur
-  // account me migrate nahi hoti. Sirf isi tarah 30-din ki safety-net copy jaati hai, kabhi UI
-  // me wapas nahi dikhti, aur 30 din baad apne aap delete ho jaati hai.
+  // SECURITY: Temp Chats (guest or logged-in) are never permanently stored and never migrated
+  // into the user's account. Only a 30-day safety-net copy is pushed, it is never surfaced back
+  // to the UI, and it auto-deletes after 30 days.
   useEffect(() => {
     if (!isTempChatActive || tempChatMessages.length === 0) return;
     const timer = setTimeout(() => {
@@ -304,7 +304,7 @@ export default function App() {
   const [updateInfo, setUpdateInfo] = useState<AppVersionInfo | null>(null);
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
 
-  // Version check function (automatic on startup and manual via Settings)
+  // Version check (runs automatically on boot, or manually from Settings)
   const checkForUpdates = async (manual = false) => {
     if (manual) setIsCheckingUpdates(true);
     try {
@@ -335,7 +335,7 @@ export default function App() {
     }
   };
 
-  // Check for updates automatically after app boots
+  // Auto-check for updates shortly after the app boots
   useEffect(() => {
     const timer = setTimeout(() => {
       checkForUpdates(false);
@@ -343,7 +343,7 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [settings.customBackendUrl]);
 
-  // Fetch server status on mount and when backend URL changes, with Render cold-start detection
+  // Fetch server status on mount and when the backend URL changes, with cold-start detection
   useEffect(() => {
     let isMounted = true;
     let retryTimer: any = null;
@@ -358,7 +358,7 @@ export default function App() {
         ).trim()
       );
 
-      // If user configured a backend and it takes longer than 2.5s, it's likely a Render cold-start
+      // If a custom backend takes longer than 2.5s, it's likely a cold start
       const slowTimer = setTimeout(() => {
         if (isMounted && hasCustomUrl) {
           setServerState('waking_up');
@@ -378,7 +378,7 @@ export default function App() {
           }
         } else {
           if (isMounted) {
-            // If response is HTML or missing, and no custom URL configured, mark offline (no fake waking banner)
+            // If the response is HTML or missing and no custom URL is set, mark offline (no fake waking banner)
             setServerState(hasCustomUrl ? 'waking_up' : 'offline');
             if (hasCustomUrl) {
               retryTimer = setTimeout(checkServerHealth, 6000);
@@ -390,7 +390,7 @@ export default function App() {
         if (isMounted) {
           setServerState(hasCustomUrl ? 'waking_up' : 'offline');
           if (hasCustomUrl) {
-            // Retry polling until Render container finishes cold booting
+            // Keep retrying until the container finishes cold-booting
             retryTimer = setTimeout(checkServerHealth, 6000);
           }
         }
@@ -433,14 +433,14 @@ export default function App() {
     }
   }, [isDark]);
 
-  // Set default active chat if none selected
+  // Set the default active chat if none is selected
   useEffect(() => {
     if (!isTempChatActive && !activeChatId && chats.length > 0) {
       setActiveChatId(chats[0].id);
     }
   }, [chats, activeChatId, isTempChatActive]);
 
-  // Get current active messages
+  // Get the currently active messages
   const currentChat = chats.find((c) => c.id === activeChatId);
   const activeMessages: Message[] = isTempChatActive
     ? tempChatMessages
@@ -500,7 +500,7 @@ export default function App() {
     }
   };
 
-  // ---- Server (DB) chat sync: sirf logged-in user ke liye ----
+  // ---- Server (DB) chat sync: only for logged-in users ----
   const syncedRef = useRef<Map<string, string>>(new Map());
   const chatsRef = useRef<ChatSession[]>(chats);
   chatsRef.current = chats;
@@ -517,7 +517,8 @@ export default function App() {
     sessionStorage.removeItem(STORAGE_KEY_CHATS);
   };
 
-  // Jo chats abhi server pe save nahi hui unhe upload karo. false return = session expire
+  // Upload any chats that aren't saved to the server yet.
+  // Returns false if the session expired (so the caller can handle it).
   const syncPendingChats = async (): Promise<boolean> => {
     if (!getAuthToken()) return true;
     for (const chat of chatsRef.current) {
@@ -535,7 +536,7 @@ export default function App() {
     return true;
   };
 
-  // Server ki chats ko local ke saath merge karo (jo naya ho wo jeete)
+  // Merge server chats with local ones (newer wins)
   const loadServerChats = async () => {
     try {
       const { chats: serverChats } = await fetchServerChats(getApiUrl);
@@ -557,8 +558,8 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    if (isGuestUser(currentUser)) return; // Guest ke liye logout nahi hota
-    await syncPendingChats(); // logout se pehle baaki chats save kar do
+    if (isGuestUser(currentUser)) return; // Guests don't need a logout action
+    await syncPendingChats(); // flush any pending chats before logging out
     resetToGuest();
   };
 
@@ -576,7 +577,7 @@ export default function App() {
     setShareCopied(false);
     try {
       const synced = await syncPendingChats();
-      if (!synced) throw new ApiError('Session expire ho gaya. Dobara Sign In karo.', 401);
+      if (!synced) throw new ApiError('Session expired. Please sign in again.', 401);
       const { shareId: newId } = await createShareLink(getApiUrl, chatId);
       const link = buildShareUrl(newId);
       setShareId(newId);
@@ -584,7 +585,7 @@ export default function App() {
       setShareModalOpen(true);
       if (await copyText(link)) setShareCopied(true);
     } catch (e: any) {
-      setShareError(e?.message || 'Share link nahi ban paya. Dobara try karo.'); // asli error dikhao
+      setShareError(e?.message || 'Could not create the share link. Please try again.'); // surface the real error
       setShareModalOpen(true);
     } finally {
       setIsSharing(false);
@@ -592,29 +593,29 @@ export default function App() {
   };
 
   const handleLoginSuccess = async (user: UserProfile) => {
-    const pendingShareChatId = pendingShareRef.current; // AuthModal band hote hi clear ho jata hai
+    const pendingShareChatId = pendingShareRef.current; // cleared when AuthModal closes
     setCurrentUser(user);
     try {
       localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
     } catch (e) {}
     if (!isGuestUser(user)) {
-      await syncPendingChats(); // login se pehle wali guest chats account me upload
-      await loadServerChats(); // phir account ki purani chats cloud se laao
-      // Ab guest ki safety-net copy (ephemeral_chats) hata do — asli data account me migrate ho chuka hai.
-      // Note: Temp Chat isse touch nahi hoti — wo jaanbujhke account me kabhi save nahi hoti.
+      await syncPendingChats(); // upload any guest chats created before login
+      await loadServerChats(); // then pull the account's existing chats from the cloud
+      // Guest safety-net copies in ephemeral_chats can now be removed — the real data has
+      // been migrated to the account. Note: Temp Chats are intentionally untouched.
       purgeGuestEphemeralChats(getApiUrl);
-      // Guest ne login se pehle Share dabaya tha to ab wahi chat share kar do
+      // If the guest tapped Share before signing in, share that chat now
       if (pendingShareChatId) await createShareFor(pendingShareChatId);
     }
   };
 
-  // Chat share karna: guest ke liye login/signup zaroori hai. Sign in karne ke baad
-  // wahi chat dobara share karni padegi (jo already normal behaviour hai).
+  // Sharing a chat requires login/signup for guests. After they sign in, the same chat
+  // is shared automatically (that's the normal flow).
   const handleShareChat = async () => {
     if (isTempChatActive || !activeChatId) return;
     if (isGuestUser(currentUser)) {
       pendingShareRef.current = activeChatId;
-      setAuthNotice('Chat share karne ke liye Sign In ya Register karo. Login hote hi ye chat tumhare account me save hokar share ho jayegi.');
+      setAuthNotice('Sign in or create an account to share this chat. Once you sign in, this chat will be saved to your account and shared automatically.');
       setAuthModalOpen(true);
       return;
     }
@@ -629,7 +630,7 @@ export default function App() {
       setShareId(null);
       setShareModalOpen(false);
     } catch (e: any) {
-      setShareError(e?.message || 'Link band nahi ho paya.');
+      setShareError(e?.message || 'Could not disable the link.');
     }
   };
 
@@ -645,14 +646,14 @@ export default function App() {
     setIsStreaming(false);
   };
 
-  // Main streaming request to Llama 3.2 REST API
+  // Main streaming request to the Llama REST API
   const handleSendMessage = async (text: string) => {
     if (!text.trim() || isStreaming) return;
 
     let targetChatId = activeChatId;
     let targetTitle = 'New Conversation';
 
-    // Create session if none exists
+    // Create a session if none exists
     if (!isTempChatActive && (!targetChatId || !currentChat)) {
       targetTitle = text.slice(0, 32) + (text.length > 32 ? '...' : '');
       const newSession: ChatSession = {
@@ -769,7 +770,7 @@ export default function App() {
               if (parsed.text) {
                 accumulatedText += parsed.text;
 
-                // Update message in state
+                // Update the message in state
                 if (isTempChatActive) {
                   setTempChatMessages((prev) =>
                     prev.map((m) =>
@@ -806,7 +807,7 @@ export default function App() {
         throw new Error(streamError);
       }
 
-      // Mark complete
+      // Mark as complete
       if (isTempChatActive) {
         setTempChatMessages((prev) =>
           prev.map((m) =>
@@ -828,7 +829,7 @@ export default function App() {
         );
       }
 
-      // Play chime if enabled
+      // Play the notification chime if enabled
       if (settings.notificationsEnabled) {
         playNotificationChime();
       }
@@ -839,8 +840,8 @@ export default function App() {
         console.error('Chat streaming error:', err);
         const friendly =
           err.message === 'Failed to fetch'
-            ? 'Backend se connect nahi ho pa raha. Backend URL (VITE_BACKEND_URL) aur Railway server status check karo.'
-            : err.message || 'Failed to connect to Llama 3.2 model endpoint';
+            ? 'Could not reach the backend. Check your backend URL (VITE_BACKEND_URL) and the server status.'
+            : err.message || 'Failed to connect to the Llama 3.2 model endpoint';
         const errorText = `\n\n⚠️ *Streaming error: ${friendly}*`;
         if (isTempChatActive) {
           setTempChatMessages((prev) =>
@@ -878,7 +879,7 @@ export default function App() {
     const lastUserMsg = [...activeMessages].reverse().find((m) => m.role === 'user');
     if (!lastUserMsg) return;
 
-    // Pop the last assistant message
+    // Remove the last assistant message
     if (isTempChatActive) {
       setTempChatMessages((prev) => {
         const lastIdx = prev.map((m) => m.role).lastIndexOf('assistant');
@@ -916,8 +917,8 @@ export default function App() {
     subscriptionModalOpen ||
     paymentModalOpen;
 
-  // "/share/<id>" link: login ho ya na ho, koi bhi isko khol sakta hai — poori app ke bajaye
-  // sirf read-only shared chat dikhao.
+  // "/share/<id>" link: anyone (logged in or guest) can open it — show only the read-only
+  // shared chat instead of the full app.
   if (sharedChatId) {
     return <SharedChatView shareId={sharedChatId} getApiUrl={getApiUrl} isDark={isDark} />;
   }
@@ -985,7 +986,7 @@ export default function App() {
           )}
         />
 
-        {/* Bottom Input Field (Only shown after 1st message) */}
+        {/* Bottom input field (only shown after the first message) */}
         {activeMessages.length > 0 && (
           <ChatInput
             onSendMessage={handleSendMessage}
@@ -1026,7 +1027,7 @@ export default function App() {
         isCheckingUpdates={isCheckingUpdates}
       />
 
-      {/* Over-the-Air App Update Modal */}
+      {/* Over-the-air app update modal */}
       <UpdateModal
         isOpen={updateModalOpen}
         onClose={() => setUpdateModalOpen(false)}
@@ -1034,7 +1035,7 @@ export default function App() {
         isDark={isDark}
       />
 
-      {/* Auth Modal (Google OAuth, Email/Password, Guest mode) */}
+      {/* Auth modal (Google OAuth, Email/Password, Guest mode) */}
       <AuthModal
         isOpen={authModalOpen}
         onClose={() => {
@@ -1048,7 +1049,7 @@ export default function App() {
         notice={authNotice}
       />
 
-      {/* Subscription & Model Plans Modal */}
+      {/* Subscription & model plans modal */}
       <SubscriptionModal
         isOpen={subscriptionModalOpen}
         onClose={() => setSubscriptionModalOpen(false)}
@@ -1060,7 +1061,7 @@ export default function App() {
         isDark={isDark}
       />
 
-      {/* Secure Payment Simulation Modal */}
+      {/* Secure payment simulation modal */}
       {pendingPaymentItem && (
         <PaymentModal
           isOpen={paymentModalOpen}
@@ -1071,7 +1072,7 @@ export default function App() {
         />
       )}
 
-      {/* Share Chat Modal: link copy karo, guest ho to Sign In dikhaya jaata hai (handleShareChat me) */}
+      {/* Share chat modal — copy the link, or stop sharing to revoke it */}
       {shareModalOpen && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
@@ -1084,14 +1085,14 @@ export default function App() {
             }`}
           >
             <h2 className="text-base font-semibold flex items-center gap-2">
-              🔗 Chat share karo
+              🔗 Share this chat
             </h2>
             {shareError ? (
               <p className="text-sm text-rose-400">{shareError}</p>
             ) : (
               <>
                 <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                  Ye link jisko bhi bhejoge, wo bina login kiye bhi ye chat padh sakta hai.
+                  Anyone with this link can read the chat — no sign-in required.
                 </p>
                 <div
                   className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${
@@ -1112,7 +1113,7 @@ export default function App() {
                   onClick={handleStopSharing}
                   className="w-full py-1.5 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-500/10 border border-rose-500/30 transition-colors"
                 >
-                  🚫 Sharing band karo (link kaam karna band)
+                  🚫 Stop sharing (disable this link)
                 </button>
               </>
             )}
@@ -1123,13 +1124,13 @@ export default function App() {
                 isDark ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800'
               }`}
             >
-              Band karo
+              Close
             </button>
           </div>
         </div>
       )}
 
-      {/* Hugging Face Token Guide & APK Testing Setup (hidden from default UI) */}
+      {/* Hugging Face Token Guide & APK Testing Setup (hidden from the default UI) */}
       <TokenGuideModal
         isOpen={tokenGuideOpen}
         onClose={() => setTokenGuideOpen(false)}

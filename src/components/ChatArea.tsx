@@ -128,8 +128,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
   const modelInfo = getModelLabel();
 
-  // NOTE: scrollIntoView() use nahi kar rahe, kyunki wo poore page (header samet) ko upar scroll kar deta hai.
-  // Sirf chat wale container ko scroll karte hain, taaki header hamesha dikhe.
+  // Track whether the user is near the bottom of the scroll container.
+  // If yes, we auto-scroll on new messages; if not, we leave their scroll position alone.
   const handleMessagesScroll = () => {
     const el = scrollContainerRef.current;
     if (!el) return;
@@ -137,11 +137,15 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     stickToBottomRef.current = distanceFromBottom < 120;
   };
 
+  // Auto-scroll to the bottom on new messages.
+  // We never use scrollIntoView() here, because that would scroll the whole page
+  // (including the header) — we only scroll the messages container so the header stays visible.
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
     const lastMsg = messages[messages.length - 1];
-    // User ne message bheja ho to hamesha neeche le jao, warna sirf tab jab user pehle se neeche ho
+    // When the user sends a message, always jump to bottom.
+    // Otherwise only auto-scroll if the user was already near the bottom.
     if (lastMsg?.role === 'user') stickToBottomRef.current = true;
     if (stickToBottomRef.current) {
       el.scrollTo({ top: el.scrollHeight, behavior: isStreaming ? 'auto' : 'smooth' });
@@ -179,7 +183,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         }`}
       >
         <div className="flex items-center gap-3">
-          {/* Logo Button - opens sidebar drawer */}
+          {/* Logo button — opens the sidebar drawer */}
           <button
             id="header-logo-btn"
             type="button"
@@ -206,9 +210,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           )}
         </div>
 
-        {/* Top Right: Active Model Pill & Upgrade Button */}
+        {/* Top right: active model pill, share, sign-in, and upgrade buttons */}
         <div className="flex items-center gap-2 relative">
-          {/* Active Model Pill with Instant Dropdown */}
+          {/* Active model pill with instant dropdown */}
           <div ref={modelMenuRef} className="relative">
             <button
               id="header-model-pill-btn"
@@ -232,7 +236,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               <ChevronDown className={`w-3.5 h-3.5 opacity-60 transition-transform ${modelDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 
-            {/* Instant Model Selection Dropdown */}
+            {/* Instant model selection dropdown */}
             {modelDropdownOpen && (
               <div
                 className={`absolute right-0 top-full mt-2 w-72 rounded-xl border shadow-xl py-1.5 z-50 ${
@@ -345,14 +349,14 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             )}
           </div>
 
-          {/* Share Chat button — colorful, only when there's an actual chat to share */}
+          {/* Share button — colorful, shown only when there's an actual chat to share */}
           {onShareChat && canShare && (
             <button
               id="header-share-btn"
               type="button"
               onClick={onShareChat}
               disabled={isSharing}
-              title="Chat share karo"
+              title="Share this chat"
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border border-transparent bg-gradient-to-r from-fuchsia-600 via-purple-600 to-indigo-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-indigo-500 text-white transition-all shadow-sm disabled:opacity-60"
             >
               {isSharing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />}
@@ -360,7 +364,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             </button>
           )}
 
-          {/* Sign In / Register button if guest */}
+          {/* Sign In / Register button (guest only) */}
           {onOpenAuth && (currentUser.provider === 'guest' || !currentUser.email || currentUser.email.includes('guest')) && (
             <button
               id="header-auth-btn"
@@ -414,7 +418,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         </div>
       </header>
 
-      {/* New Over-the-Air Update Available Banner */}
+      {/* Over-the-air update available banner */}
       {updateInfo && updateInfo.version && updateInfo.version !== getClientVersion() && (
         <div className="w-full bg-gradient-to-r from-blue-600/20 via-indigo-600/20 to-blue-600/20 border-b border-blue-500/30 px-4 py-2 flex items-center justify-between text-xs text-blue-200 transition-all shadow-sm shrink-0">
           <div className="flex items-center gap-2">
@@ -438,9 +442,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         </div>
       )}
 
-      {/* Main Messages & Center View */}
+      {/* Main content: empty state (centered input) or conversation history */}
       {messages.length === 0 ? (
-        /* Initial Screen: Chatbox placed in the center of the screen as requested */
+        /* Empty state: centered chat input */
         <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 overflow-y-auto">
           <div className="max-w-2xl w-full text-center space-y-6 animate-in fade-in duration-200 py-6">
             <div className="flex justify-center mb-2">
@@ -451,14 +455,14 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               What can I help with?
             </h1>
 
-            {/* Centered Chat Input Box */}
+            {/* Centered chat input box */}
             {renderCenteredInput && (
               <div className="w-full">
                 {renderCenteredInput()}
               </div>
             )}
 
-            {/* Minimalist Starter Prompt Chips */}
+            {/* Minimalist starter prompt chips */}
             <div className="flex flex-wrap items-center justify-center gap-2 pt-2 max-w-xl mx-auto">
               {starterSuggestions.map((prompt, idx) => (
                 <button
@@ -478,7 +482,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           </div>
         </div>
       ) : (
-        /* Conversation Message History */
+        /* Conversation history */
         <div
           ref={scrollContainerRef}
           onScroll={handleMessagesScroll}
@@ -499,7 +503,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                     isUser ? 'justify-end' : 'justify-start'
                   } items-start`}
                 >
-                  {/* Assistant Avatar (only icon and message as requested) */}
+                  {/* Assistant avatar */}
                   {!isUser && (
                     <div className="shrink-0 pt-0.5">
                       <div className="w-7 h-7 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center">
@@ -508,7 +512,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                     </div>
                   )}
 
-                  {/* Message Bubble Container */}
+                  {/* Message bubble container */}
                   <div className="relative max-w-[85%] sm:max-w-[80%] flex flex-col">
                     <div
                       className={`relative rounded-2xl px-4 py-2.5 text-sm sm:text-base leading-relaxed ${
@@ -519,7 +523,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                           : 'text-inherit self-start px-0 sm:px-1'
                       }`}
                     >
-                      {/* Message Content */}
+                      {/* Message content */}
                       {isUser ? (
                         <div className="whitespace-pre-wrap break-words">{msg.content}</div>
                       ) : (
@@ -537,8 +541,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                       )}
                     </div>
 
-                    {/* Hover / Touch Timestamp Display:
-                        "aur jab user waha pe curson le jaye ja touch kare to time aur short me dikha do" */}
+                    {/* Timestamp — revealed on hover (desktop) or focus (touch) */}
                     <div
                       className={`text-[10px] text-zinc-500 mt-1 opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition-opacity select-none ${
                         isUser ? 'text-right' : 'text-left ml-1'
@@ -547,11 +550,10 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                       {formatShortTime(msg.timestamp)}
                     </div>
 
-                    {/* Assistant Action Buttons:
-                        "aur copy aru regenerate ka kewal icon hi dikhao name mat rakho" */}
+                    {/* Assistant action buttons — icon only (no labels) */}
                     {!isUser && !isStreaming && (
                       <div className="flex items-center gap-1 mt-1 ml-1 text-zinc-400">
-                        {/* Copy Icon Only */}
+                        {/* Copy icon */}
                         <button
                           type="button"
                           onClick={() => handleCopy(msg.id, msg.content)}
@@ -567,7 +569,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                           )}
                         </button>
 
-                        {/* Regenerate Icon Only (for last assistant message) */}
+                        {/* Regenerate icon (last assistant message only) */}
                         {isLastAssistant && (
                           <button
                             type="button"
@@ -584,7 +586,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                     )}
                   </div>
 
-                  {/* User Avatar (only icon and message as requested) */}
+                  {/* User avatar */}
                   {isUser && (
                     <div className="shrink-0 pt-0.5">
                       <div className="w-7 h-7 rounded-full bg-zinc-700 text-zinc-200 flex items-center justify-center font-medium text-xs">

@@ -42,7 +42,8 @@ interface PaymentModalProps {
     plan: SubscriptionPlanType,
     modelId: string,
     durationDays: number,
-    paymentId: string
+    paymentId: string,
+    meta: { paymentMethod: string; utrNumber?: string }
   ) => void;
   isDark: boolean;
 }
@@ -101,7 +102,16 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setIsSuccess(true);
 
       setTimeout(() => {
-        onPaymentSuccess(item.plan, item.modelId, item.durationDays, generatedTx);
+        onPaymentSuccess(
+          item.plan,
+          item.modelId,
+          item.durationDays,
+          generatedTx,
+          {
+            paymentMethod: activeTab,
+            utrNumber: utrNumber.trim() || undefined,
+          }
+        );
         setIsSuccess(false);
         onClose();
       }, 1600);

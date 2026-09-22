@@ -15,8 +15,11 @@ import {
   Smartphone,
   Check,
   Cpu,
-  Zap,
   Crown,
+  Share2,
+  Receipt,
+  User as UserIcon,
+  ChevronRight,
 } from 'lucide-react';
 import { getClientVersion } from '../version';
 import { isGuestUser } from '../utils/api';
@@ -29,7 +32,10 @@ interface SettingsModalProps {
   currentUser: UserProfile;
   onLogout: () => void;
   onOpenAuth?: () => void;
+  onOpenProfile?: () => void;
   onOpenSubscription: (plan?: SubscriptionPlanType) => void;
+  onOpenPaymentHistory?: () => void;
+  onOpenSharedChats?: () => void;
   isDark: boolean;
   onCheckForUpdates?: () => void;
   isCheckingUpdates?: boolean;
@@ -43,7 +49,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   currentUser,
   onLogout,
   onOpenAuth,
+  onOpenProfile,
   onOpenSubscription,
+  onOpenPaymentHistory,
+  onOpenSharedChats,
   isDark,
   onCheckForUpdates,
   isCheckingUpdates = false,
@@ -60,7 +69,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   ];
 
   const handleModelChange = (modelId: string) => {
-    // Keep the active-plan in sync with the newly selected model
     const planMap: Record<string, SubscriptionPlanType> = {
       'meta-llama/Llama-3.2-1B-Instruct': 'free',
       'meta-llama/Llama-3.2-3B-Instruct': 'cat',
@@ -101,13 +109,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const currentBadge = getPlanBadge();
 
+  const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+    <label className={`block text-xs font-semibold uppercase tracking-wider mb-2.5 ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
+      {children}
+    </label>
+  );
+
+  const CardWrapper: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
+    <div className={`p-3.5 rounded-xl border ${isDark ? 'bg-zinc-900/60 border-zinc-800' : 'bg-zinc-50 border-zinc-200'} ${className}`}>
+      {children}
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto p-3 sm:p-4 bg-black/60 backdrop-blur-sm flex justify-center items-start sm:items-center min-h-screen animate-in fade-in duration-200">
       <div
         className={`w-full max-w-md my-auto max-h-[92vh] flex flex-col rounded-2xl border shadow-xl p-5 sm:p-6 relative overflow-y-auto ${
-          isDark
-            ? 'bg-[#212121] border-zinc-800 text-zinc-100'
-            : 'bg-white border-zinc-200 text-zinc-900'
+          isDark ? 'bg-[#212121] border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-900'
         }`}
       >
         {/* Close Button */}
@@ -130,51 +148,45 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <div>
             <h2 className="text-xl font-bold tracking-tight">Settings</h2>
             <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-              Theme, notifications & account
+              Preferences, subscriptions & account
             </p>
           </div>
         </div>
 
         <div className="space-y-5">
-          {/* Theme Selection: Dark, Bright, System */}
-          <div>
-            <label className={`block text-xs font-semibold uppercase tracking-wider mb-2.5 ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
-              Theme
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {themes.map((t) => {
-                const Icon = t.icon;
-                const isSelected = settings.theme === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    id={`theme-btn-${t.id}`}
-                    type="button"
-                    onClick={() => onUpdateSettings({ theme: t.id })}
-                    className={`py-2.5 px-3 rounded-xl border flex flex-col items-center gap-1.5 text-xs font-medium transition-all ${
-                      isSelected
-                        ? isDark
-                          ? 'bg-zinc-700 border-zinc-500 text-white'
-                          : 'bg-zinc-200 border-zinc-400 text-zinc-900'
-                        : isDark
-                        ? 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
-                        : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:border-zinc-300'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                    <span>{t.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+          {/* ==================== GENERAL ==================== */}
+          <SectionLabel>General</SectionLabel>
+
+          {/* Theme */}
+          <div className="grid grid-cols-3 gap-2">
+            {themes.map((t) => {
+              const Icon = t.icon;
+              const isSelected = settings.theme === t.id;
+              return (
+                <button
+                  key={t.id}
+                  id={`theme-btn-${t.id}`}
+                  type="button"
+                  onClick={() => onUpdateSettings({ theme: t.id })}
+                  className={`py-2.5 px-3 rounded-xl border flex flex-col items-center gap-1.5 text-xs font-medium transition-all ${
+                    isSelected
+                      ? isDark
+                        ? 'bg-zinc-700 border-zinc-500 text-white'
+                        : 'bg-zinc-200 border-zinc-400 text-zinc-900'
+                      : isDark
+                      ? 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+                      : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:border-zinc-300'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span>{t.label}</span>
+                </button>
+              );
+            })}
           </div>
 
-          {/* Notification Settings Toggle */}
-          <div
-            className={`p-3.5 rounded-xl border flex items-center justify-between transition-colors ${
-              isDark ? 'bg-zinc-900/60 border-zinc-800' : 'bg-zinc-50 border-zinc-200'
-            }`}
-          >
+          {/* Sound Notifications */}
+          <CardWrapper className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className={`p-2 rounded-lg ${settings.notificationsEnabled ? 'bg-zinc-800 text-zinc-200' : isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-zinc-200 text-zinc-600'}`}>
                 {settings.notificationsEnabled ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
@@ -186,7 +198,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </p>
               </div>
             </div>
-
             <button
               id="toggle-notifications-btn"
               type="button"
@@ -205,14 +216,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }`}
               />
             </button>
-          </div>
+          </CardWrapper>
 
-          {/* AI Model Selection — only owned models are listed */}
-          <div
-            className={`p-3.5 rounded-xl border flex flex-col gap-2.5 ${
-              isDark ? 'bg-zinc-900/60 border-zinc-800' : 'bg-zinc-50 border-zinc-200'
+          {/* ==================== SHARED CHATS ==================== */}
+          <SectionLabel>Shared Chats</SectionLabel>
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onOpenSharedChats?.();
+            }}
+            disabled={isGuest}
+            className={`w-full text-left p-3.5 rounded-xl border flex items-center justify-between transition-all ${
+              isDark
+                ? 'bg-zinc-900/60 border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 disabled:opacity-50'
+                : 'bg-zinc-50 border-zinc-200 hover:border-zinc-300 hover:bg-zinc-100 disabled:opacity-50'
             }`}
           >
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-fuchsia-500/15 text-fuchsia-400 border border-fuchsia-500/30">
+                <Share2 className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">My Shared Chats</p>
+                <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                  {isGuest ? 'Sign in to view your shared chats' : 'History of chats you have shared'}
+                </p>
+              </div>
+            </div>
+            <ChevronRight className={`w-4 h-4 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`} />
+          </button>
+
+          {/* ==================== MODEL ==================== */}
+          <SectionLabel>Model</SectionLabel>
+          <CardWrapper className="flex flex-col gap-2.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-zinc-800 text-zinc-200">
@@ -261,35 +298,59 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </option>
               )}
             </select>
-          </div>
+          </CardWrapper>
 
-          {/* Subscription Plans Card */}
-          <div
-            className={`p-3.5 rounded-xl border flex items-center justify-between ${
-              isDark ? 'bg-zinc-900/60 border-zinc-800' : 'bg-zinc-50 border-zinc-200'
+          {/* ==================== PAYMENT & SUBSCRIPTION ==================== */}
+          <SectionLabel>Payment & Subscription</SectionLabel>
+
+          {/* Payment History */}
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onOpenPaymentHistory?.();
+            }}
+            disabled={isGuest}
+            className={`w-full text-left p-3.5 rounded-xl border flex items-center justify-between transition-all ${
+              isDark
+                ? 'bg-zinc-900/60 border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 disabled:opacity-50'
+                : 'bg-zinc-50 border-zinc-200 hover:border-zinc-300 hover:bg-zinc-100 disabled:opacity-50'
             }`}
           >
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                <Receipt className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">Payment History</p>
+                <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                  {isGuest ? 'Sign in to view payments' : 'View all payments & download receipts'}
+                </p>
+              </div>
+            </div>
+            <ChevronRight className={`w-4 h-4 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`} />
+          </button>
+
+          {/* Manage Subscription */}
+          <CardWrapper className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-zinc-800 text-zinc-200">
                 <Sparkles className="w-4 h-4 text-amber-400" />
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium">Subscription & Plans</p>
-                </div>
+                <p className="text-sm font-medium">Manage Subscription</p>
                 <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                   {settings.subscriptionPlan && settings.subscriptionPlan !== 'free' && settings.subscriptionExpiresAt ? (
                     <span className="text-emerald-400 font-medium">
-                      Active • Reverts to Free in {Math.max(0, Math.ceil((settings.subscriptionExpiresAt - Date.now()) / (1000 * 60 * 60 * 24)))} days
+                      Active • Reverts in {Math.max(0, Math.ceil((settings.subscriptionExpiresAt - Date.now()) / (1000 * 60 * 60 * 24)))} days
                     </span>
                   ) : (
-                    'Cat (₹1 Test), Chetak (₹299/mo), Arka (₹799/mo)'
+                    'Cat (₹1), Chetak (₹299/mo), Arka (₹799/mo)'
                   )}
                 </p>
               </div>
             </div>
             <button
-              id="open-subscription-from-settings-btn"
               type="button"
               onClick={() => {
                 onClose();
@@ -300,33 +361,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <Crown className="w-3.5 h-3.5 text-amber-300" />
               <span>{settings.subscriptionPlan && settings.subscriptionPlan !== 'free' ? 'Manage' : 'Upgrade'}</span>
             </button>
-          </div>
+          </CardWrapper>
 
-          {/* App Version & Check for Updates */}
-          <div
-            className={`p-3.5 rounded-xl border flex items-center justify-between ${
-              isDark ? 'bg-zinc-900/60 border-zinc-800' : 'bg-zinc-50 border-zinc-200'
-            }`}
-          >
+          {/* ==================== APP VERSION ==================== */}
+          <SectionLabel>App Version</SectionLabel>
+          <CardWrapper className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-zinc-800 text-zinc-200">
                 <Smartphone className="w-4 h-4 text-emerald-400" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium">App Version</p>
+                  <p className="text-sm font-medium">Version</p>
                   <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300">
                     v{getClientVersion()}
                   </span>
                 </div>
                 <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                  Instant over-the-air update support
+                  Instant over-the-air updates
                 </p>
               </div>
             </div>
             {onCheckForUpdates && (
               <button
-                id="check-updates-btn"
                 type="button"
                 onClick={onCheckForUpdates}
                 disabled={isCheckingUpdates}
@@ -337,78 +394,78 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }`}
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isCheckingUpdates ? 'animate-spin text-blue-400' : ''}`} />
-                <span>{isCheckingUpdates ? 'Checking...' : 'Check Update'}</span>
+                <span>{isCheckingUpdates ? 'Checking...' : 'Check'}</span>
               </button>
             )}
-          </div>
+          </CardWrapper>
 
-          {/* User Account summary & Logout Button */}
-          <div className={`pt-3 border-t ${isDark ? 'border-zinc-800' : 'border-zinc-200'}`}>
+          {/* ==================== PROFILE ==================== */}
+          <SectionLabel>Profile</SectionLabel>
+          <CardWrapper>
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5 truncate pr-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (isGuest) {
+                    onClose();
+                    onOpenAuth?.();
+                    return;
+                  }
+                  onClose();
+                  onOpenProfile?.();
+                }}
+                className="flex items-center gap-2.5 truncate pr-2 flex-1 text-left rounded-lg -m-1 p-1 transition-colors hover:bg-zinc-800/40"
+                title={isGuest ? 'Sign in to manage profile' : 'Open profile'}
+              >
                 <div className="w-8 h-8 rounded-full bg-zinc-700 text-zinc-100 flex items-center justify-center font-bold text-xs shrink-0">
                   {currentUser.name ? currentUser.name[0].toUpperCase() : 'U'}
                 </div>
                 <div className="truncate">
                   <p className="text-xs font-medium truncate">{currentUser.name}</p>
                   <p className={`text-[11px] truncate ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                    {isGuest ? 'Guest (chats sirf is device par)' : currentUser.email}
+                    {isGuest ? 'Guest • Tap to sign in' : currentUser.email}
                   </p>
                 </div>
-              </div>
+                <ChevronRight className={`w-4 h-4 ml-auto shrink-0 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`} />
+              </button>
 
-              {isGuest ? (
-                <button
-                  id="settings-signin-btn"
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    onOpenAuth?.();
-                  }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-medium border flex items-center gap-1.5 transition-colors shrink-0 ${
-                    isDark
-                      ? 'text-blue-300 border-blue-500/30 hover:bg-blue-500/10'
-                      : 'text-blue-600 border-blue-300 hover:bg-blue-50'
-                  }`}
-                >
-                  <LogIn className="w-3.5 h-3.5" />
-                  <span>Sign In / Register</span>
-                </button>
-              ) : !showLogoutConfirm ? (
-                <button
-                  id="logout-btn"
-                  type="button"
-                  onClick={() => setShowLogoutConfirm(true)}
-                  className="px-3 py-1.5 rounded-xl text-xs font-medium text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-rose-500/20 flex items-center gap-1.5 transition-colors shrink-0"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>Logout</span>
-                </button>
-              ) : (
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    id="confirm-logout-btn"
-                    type="button"
-                    onClick={() => {
-                      onLogout();
-                      setShowLogoutConfirm(false);
-                      onClose();
-                    }}
-                    className="px-2.5 py-1 rounded-lg text-xs font-medium bg-rose-600 text-white hover:bg-rose-700 transition-colors"
-                  >
-                    Confirm
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowLogoutConfirm(false)}
-                    className={`px-2 py-1 rounded-lg text-xs ${isDark ? 'text-zinc-400 hover:bg-zinc-800' : 'text-zinc-600 hover:bg-zinc-200'}`}
-                  >
-                    Cancel
-                  </button>
-                </div>
+              {!isGuest && (
+                <>
+                  {!showLogoutConfirm ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowLogoutConfirm(true)}
+                      className="px-3 py-1.5 rounded-xl text-xs font-medium text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-rose-500/20 flex items-center gap-1.5 transition-colors shrink-0 ml-2"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Logout</span>
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onLogout();
+                          setShowLogoutConfirm(false);
+                          onClose();
+                        }}
+                        className="px-2.5 py-1 rounded-lg text-xs font-medium bg-rose-600 text-white hover:bg-rose-700 transition-colors"
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowLogoutConfirm(false)}
+                        className={`px-2 py-1 rounded-lg text-xs ${isDark ? 'text-zinc-400 hover:bg-zinc-800' : 'text-zinc-600 hover:bg-zinc-200'}`}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
-          </div>
+          </CardWrapper>
         </div>
       </div>
     </div>

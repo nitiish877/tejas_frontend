@@ -1,4 +1,4 @@
-import { ChatSession, UserProfile } from '../types';
+import { ChatSession, UserProfile, SubscriptionPlanType } from '../types';
 
 const TOKEN_KEY = 'tejas_auth_token_v1';
 const GUEST_ID_KEY = 'tejas_guest_id_v1';
@@ -88,6 +88,16 @@ async function request<T>(getUrl: UrlBuilder, path: string, options: RequestInit
 export interface AuthResult {
   token: string;
   user: UserProfile;
+}
+
+// Subscription snapshot saved on the server, so logout/login keeps the user's plans
+export interface ServerSubscription {
+  subscriptionPlan: SubscriptionPlanType;
+  ownedPlans: SubscriptionPlanType[];
+  planExpiries: Partial<Record<SubscriptionPlanType, number>>;
+  subscriptionStartedAt?: number;
+  subscriptionExpiresAt?: number;
+  lastPaymentId?: string;
 }
 
 export const registerAccount = (getUrl: UrlBuilder, body: { name: string; email: string; password: string }) =>
@@ -194,3 +204,55 @@ export interface SharedChatData {
 
 export const fetchSharedChat = (getUrl: UrlBuilder, shareId: string) =>
   request<SharedChatData>(getUrl, `/api/share/${encodeURIComponent(shareId)}`, {}, false);
+
+// ---------------- SUBSCRIPTION ----------------
+// Persist the subscription snapshot on the server so it survives logout/login.
+export const saveSubscriptionToServer = (
+  getUrl: UrlBuilder,
+  data: ServerSubscription
+) =>
+  request<{ user: UserProfile }>(
+    getUrl,
+    '/api/auth/subscription',
+    { method: 'PUT', body: JSON.stringify(data) },
+    true
+  );
+  // ---------------- PAYMENTS ----------------
+export interface PaymentRecord {
+  id: string;
+  plan: SubscriptionPlanType;
+  modelId: string;
+  planName: string;
+  amount: number;
+  period: string;
+  durationDays: number;
+  paymentMethod: string;
+  utrNumber?: string;
+  txId: string;
+  createdAt: number;
+}
+
+export const savePaymentRecord = (
+  getUrl: UrlBuilder,
+  data: Omit<PaymentRecord, 'id'>
+) =>
+  request<{ ok: boolean; id: string }>(
+    getUrl,
+    '/api/payments',
+    { method: 'POST', body: JSON.stringify(data) },
+    true
+  );
+
+export const fetchMyPayments = (getUrl: UrlBuilder) =>
+  request<{ payments: PaymentRecord[] }>(getUrl, '/api/payments', {}, true);
+
+// ---------------- SHARES (list user's own) ----------------
+export interface ShareRecord {
+  shareId: string;
+  chatId: string;
+  title: string;
+  createdAt: number;
+}
+
+export const fetchMyShares = (getUrl: UrlBuilder) =>
+  request<{ shares: ShareRecord[] }>(getUrl, '/api/shares', {}, true);

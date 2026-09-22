@@ -11,6 +11,8 @@ import { SubscriptionModal } from './components/SubscriptionModal';
 import { PaymentItem, PaymentModal } from './components/PaymentModal';
 import { UpdateModal } from './components/UpdateModal';
 import { SharedChatView } from './components/SharedChatView';
+import { PaymentHistoryModal } from './components/PaymentHistoryModal';
+import { SharedChatsModal } from './components/SharedChatsModal';
 import { getClientVersion, isVersionDismissed, AppVersionInfo } from './version';
 import { playNotificationChime } from './utils/audio';
 import {
@@ -26,7 +28,9 @@ import {
   isGuestUser,
   purgeGuestEphemeralChats,
   saveEphemeralChat,
+  savePaymentRecord,
   saveServerChat,
+  saveSubscriptionToServer,
   updateMyName,
 } from './utils/api';
 import { copyText } from './utils/clipboard';
@@ -167,6 +171,8 @@ export default function App() {
   const [pendingPaymentItem, setPendingPaymentItem] = useState<PaymentItem | null>(null);
   const [highlightPlan, setHighlightPlan] = useState<SubscriptionPlanType>('cat');
 
+  const [paymentHistoryOpen, setPaymentHistoryOpen] = useState(false);
+  const [sharedChatsOpen, setSharedChatsOpen] = useState(false);
   const handleOpenSubscription = (plan: SubscriptionPlanType = 'cat') => {
     setHighlightPlan(plan);
     setSubscriptionModalOpen(true);
@@ -195,11 +201,12 @@ export default function App() {
     }));
   };
 
-  const handlePaymentSuccess = (
+      const handlePaymentSuccess = (
     plan: SubscriptionPlanType,
     modelId: string,
     durationDays: number,
-    paymentId: string
+    paymentId: string,
+    meta: { paymentMethod: string; utrNumber?: string }
   ) => {
     const now = Date.now();
     const expiresAt = now + durationDays * 24 * 60 * 60 * 1000;
@@ -207,7 +214,7 @@ export default function App() {
       // Add the plan to the user's owned list (keeps previous plans intact)
       const owned = new Set(prev.ownedPlans || []);
       owned.add(plan);
-      return {
+      const next: AppSettings = {
         ...prev,
         subscriptionPlan: plan,
         selectedModel: modelId,
@@ -220,10 +227,48 @@ export default function App() {
           [plan]: expiresAt,
         },
       };
+      // Persist subscription + payment record on server so both survive logout/login
+      if (getAuthToken() && !isGuestUser(currentUser)) {
+        saveSubscriptionToServer(getApiUrl, {
+          subscriptionPlan: next.subscriptionPlan || 'free',
+          ownedPlans: next.ownedPlans || [],
+          planExpiries: next.planExpiries || {},
+          subscriptionStartedAt: next.subscriptionStartedAt,
+          subscriptionExpiresAt: next.subscriptionExpiresAt,
+          lastPaymentId: next.lastPaymentId,
+        }).catch((e) => console.error('Subscription sync failed', e));
+
+        // Save the payment record for the history view
+        const planNames: Record<SubscriptionPlanType, { name: string; modelId: string }> = {
+          free: { name: 'Free Tier', modelId: 'meta-llama/Llama-3.2-1B-Instruct' },
+          cat: { name: 'Tejas Cat (3B) Test Tier', modelId: 'meta-llama/Llama-3.2-3B-Instruct' },
+          chetak: { name: 'Tejas Chetak (8B)', modelId: 'meta-llama/Llama-3.1-8B-Instruct' },
+          arka: { name: 'Tejas Arka (70B)', modelId: 'meta-llama/Llama-3.3-70B-Instruct' },
+        };
+        const info = planNames[plan] || planNames.free;
+        const amounts: Record<SubscriptionPlanType, number> = {
+          free: 0,
+          cat: 1,
+          chetak: 299,
+          arka: 799,
+        };
+        savePaymentRecord(getApiUrl, {
+          plan,
+          modelId: info.modelId,
+          planName: info.name,
+          amount: amounts[plan] || 0,
+          period: durationDays >= 365 ? '1 year' : '1 month',
+          durationDays,
+          paymentMethod: meta.paymentMethod,
+          utrNumber: meta.utrNumber,
+          txId: paymentId,
+          createdAt: now,
+        }).catch((e) => console.error('Payment record sync failed', e));
+      }
+      return next;
     });
     playNotificationChime();
   };
-
   // Independently expire each owned plan as its own expiry passes.
   // If the currently selected plan expires, fall back to Free (1B).
   useEffect(() => {
@@ -249,10 +294,10 @@ export default function App() {
           if (exp && exp <= now) delete newExpiries[p];
         }
 
-        const currentPlan = prev.subscriptionPlan || 'free';
+                const currentPlan = prev.subscriptionPlan || 'free';
         const stillOwned = currentPlan === 'free' || active.includes(currentPlan);
 
-        return {
+        const next: AppSettings = {
           ...prev,
           ownedPlans: active,
           planExpiries: newExpiries,
@@ -262,6 +307,20 @@ export default function App() {
             : 'meta-llama/Llama-3.2-1B-Instruct',
           subscriptionExpiresAt: stillOwned ? prev.subscriptionExpiresAt : undefined,
         };
+
+        // Persist the cleanup to the server, so expired plans don't reappear on next login
+        if (getAuthToken() && !isGuestUser(currentUser)) {
+          saveSubscriptionToServer(getApiUrl, {
+            subscriptionPlan: next.subscriptionPlan || 'free',
+            ownedPlans: next.ownedPlans || [],
+            planExpiries: next.planExpiries || {},
+            subscriptionStartedAt: next.subscriptionStartedAt,
+            subscriptionExpiresAt: next.subscriptionExpiresAt,
+            lastPaymentId: next.lastPaymentId,
+          }).catch((e) => console.error('Subscription sync failed', e));
+        }
+
+        return next;
       });
     };
 
@@ -269,7 +328,6 @@ export default function App() {
     const timer = setInterval(checkSubscriptionExpiry, 5000);
     return () => clearInterval(timer);
   }, []); // interval reads latest state via the setState callback
-
   // HF status info from backend
   const [hfStatus, setHfStatus] = useState<HFStatus | null>(null);
 
@@ -671,6 +729,28 @@ export default function App() {
       localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
     } catch (e) {}
     if (!isGuestUser(user)) {
+      // Pull the latest user record (including subscription) from the server, so
+      // plans the user bought previously reappear after logout/login.
+      try {
+        const { user: fresh } = await fetchMe(getApiUrl);
+        const serverUser: any = fresh;
+        setSettings((prev) => ({
+          ...prev,
+          subscriptionPlan: serverUser.subscriptionPlan || 'free',
+          ownedPlans: Array.isArray(serverUser.ownedPlans) ? serverUser.ownedPlans : [],
+          planExpiries: serverUser.planExpiries && typeof serverUser.planExpiries === 'object'
+            ? serverUser.planExpiries
+            : {},
+          subscriptionStartedAt: serverUser.subscriptionStartedAt,
+          subscriptionExpiresAt: serverUser.subscriptionExpiresAt,
+          lastPaymentId: serverUser.lastPaymentId,
+          // Keep selectedModel as-is; if it's not owned, the auto-expiry effect
+          // below will fall it back to Free 1B on the next tick.
+        }));
+      } catch (e) {
+        console.error('Failed to load subscription from server', e);
+      }
+
       await syncPendingChats(); // upload any guest chats created before login
       await loadServerChats(); // then pull the account's existing chats from the cloud
       // Guest safety-net copies in ephemeral_chats can now be removed — the real data has
@@ -987,7 +1067,9 @@ export default function App() {
     authModalOpen ||
     tokenGuideOpen ||
     subscriptionModalOpen ||
-    paymentModalOpen;
+    paymentModalOpen ||
+    paymentHistoryOpen ||
+    sharedChatsOpen;
 
   // "/share/<id>" link: anyone (logged in or guest) can open it — show only the read-only
   // shared chat instead of the full app.
@@ -1090,7 +1172,7 @@ export default function App() {
       />
 
       {/* App Settings Modal (Dark, Bright, System themes, Notifications toggle, Logout) */}
-      <SettingsModal
+        <SettingsModal
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         settings={settings}
@@ -1100,7 +1182,10 @@ export default function App() {
         currentUser={currentUser}
         onLogout={handleLogout}
         onOpenAuth={() => setAuthModalOpen(true)}
+        onOpenProfile={() => setUserProfileOpen(true)}
         onOpenSubscription={(plan) => handleOpenSubscription(plan || 'cat')}
+        onOpenPaymentHistory={() => setPaymentHistoryOpen(true)}
+        onOpenSharedChats={() => setSharedChatsOpen(true)}
         isDark={isDark}
         onCheckForUpdates={() => checkForUpdates(true)}
         isCheckingUpdates={isCheckingUpdates}
@@ -1209,6 +1294,25 @@ export default function App() {
         </div>
       )}
 
+      {/* Payment History Modal — full list + detail + download receipt */}
+      <PaymentHistoryModal
+        isOpen={paymentHistoryOpen}
+        onClose={() => setPaymentHistoryOpen(false)}
+        getApiUrl={getApiUrl}
+        isDark={isDark}
+      />
+
+      {/* Shared Chats Modal — list of user's own shared chats */}
+      <SharedChatsModal
+        isOpen={sharedChatsOpen}
+        onClose={() => setSharedChatsOpen(false)}
+        getApiUrl={getApiUrl}
+        isDark={isDark}
+        onOpenShare={(shareId) => {
+          window.open(`/share/${shareId}`, '_blank', 'noopener,noreferrer');
+        }}
+      />
+
       {/* Hugging Face Token Guide & APK Testing Setup (hidden from the default UI) */}
       <TokenGuideModal
         isOpen={tokenGuideOpen}
@@ -1218,6 +1322,7 @@ export default function App() {
         hfStatus={hfStatus}
         isDark={isDark}
       />
+
     </div>
   );
 }

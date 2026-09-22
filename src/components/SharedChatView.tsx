@@ -24,7 +24,7 @@ export const SharedChatView: React.FC<SharedChatViewProps> = ({ shareId, getApiU
         if (mounted) setData(res);
       })
       .catch((e) => {
-        if (mounted) setError(e?.message || 'Ye shared chat load nahi ho payi.');
+        if (mounted) setError(e?.message || 'shared chat can not be loaded.');
       })
       .finally(() => {
         if (mounted) setLoading(false);
@@ -57,7 +57,7 @@ export const SharedChatView: React.FC<SharedChatViewProps> = ({ shareId, getApiU
           href="/"
           className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white transition-all"
         >
-          Tejas AI try karo →
+         try Tejas AI →
         </a>
       </header>
 
@@ -79,12 +79,12 @@ export const SharedChatView: React.FC<SharedChatViewProps> = ({ shareId, getApiU
 
           {!loading && data && (
             <>
-              <div className="pb-2">
-                <h1 className="text-xl font-semibold">{data.title}</h1>
-                <p className={`text-xs mt-1 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                  {data.ownerName} ne share ki • {new Date(data.createdAt).toLocaleDateString()}
-                </p>
-              </div>
+<div className="pb-2">
+  <h1 className="text-xl font-semibold">{data.title}</h1>
+  <p className={`text-xs mt-1 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+    Shared by {data.ownerName} • {new Date(data.createdAt).toLocaleDateString()}
+  </p>
+</div>
 
               {data.messages.map((msg, idx) => {
                 const isUser = msg.role === 'user';
@@ -127,7 +127,7 @@ export const SharedChatView: React.FC<SharedChatViewProps> = ({ shareId, getApiU
                   href="/"
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white transition-all"
                 >
-                  ✨ Apni khud ki chat shuru karo — Tejas AI
+                  ✨ Start your own chat — Tejas AI
                 </a>
               </div>
             </>

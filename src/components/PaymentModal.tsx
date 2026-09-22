@@ -21,7 +21,7 @@ import { SubscriptionPlanType } from '../types';
 // 💳 UPI CONFIGURATION SETTINGS (REAL ACTIVE UPI ID)
 // ==========================================================
 export const UPI_CONFIG = {
-  vpa: 'mrid32644@naviaxis',
+  vpa: 'abcd@upi',
   merchantName: 'Tejas AI',
 };
 

@@ -198,7 +198,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </button>
           </div>
 
-          {/* AI Model Selection */}
+          {/* AI Model Selection — only owned models are listed */}
           <div
             className={`p-3.5 rounded-xl border flex flex-col gap-2.5 ${
               isDark ? 'bg-zinc-900/60 border-zinc-800' : 'bg-zinc-50 border-zinc-200'
@@ -212,7 +212,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div>
                   <p className="text-sm font-medium">Active AI Model</p>
                   <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                    Choose your preferred Tejas model
+                    {settings.subscriptionPlan && settings.subscriptionPlan !== 'free'
+                      ? 'Switch between your free and active subscription models'
+                      : 'Upgrade a plan to unlock more models'}
                   </p>
                 </div>
               </div>
@@ -234,79 +236,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <option value="meta-llama/Llama-3.2-1B-Instruct">
                 1B (Free Tier - Fast & Lightweight)
               </option>
-              <option value="meta-llama/Llama-3.2-3B-Instruct">
-                Cat (3B - ₹1 Test Tier / 1 Month)
-              </option>
-              <option value="meta-llama/Llama-3.1-8B-Instruct">
-                Chetak (8B - ₹299/mo Pro Reasoning)
-              </option>
-              <option value="meta-llama/Llama-3.3-70B-Instruct">
-                Arka (70B - ₹799/mo Flagship Power)
-              </option>
+              {settings.subscriptionPlan === 'cat' && (
+                <option value="meta-llama/Llama-3.2-3B-Instruct">
+                  Cat (3B - Active Subscription)
+                </option>
+              )}
+              {settings.subscriptionPlan === 'chetak' && (
+                <option value="meta-llama/Llama-3.1-8B-Instruct">
+                  Chetak (8B - Active Subscription)
+                </option>
+              )}
+              {settings.subscriptionPlan === 'arka' && (
+                <option value="meta-llama/Llama-3.3-70B-Instruct">
+                  Arka (70B - Active Subscription)
+                </option>
+              )}
             </select>
-
-            {/* Optional Plan Upgrade Trigger for Selected Model */}
-            {(() => {
-              const selected = settings.selectedModel || 'meta-llama/Llama-3.2-1B-Instruct';
-              const currentPlan = settings.subscriptionPlan || 'free';
-
-              if (
-                selected === 'meta-llama/Llama-3.2-3B-Instruct' &&
-                currentPlan !== 'cat' &&
-                currentPlan !== 'chetak' &&
-                currentPlan !== 'arka'
-              ) {
-                return (
-                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-300 text-xs mt-1">
-                    <span className="font-medium">Cat 3B selected. Unlock full 1-month pass:</span>
-                    <button
-                      type="button"
-                      onClick={() => onOpenSubscription('cat')}
-                      className="px-2.5 py-1 rounded-md bg-purple-600 hover:bg-purple-500 text-white font-semibold text-[11px] shadow-sm cursor-pointer"
-                    >
-                      Subscribe ₹1
-                    </button>
-                  </div>
-                );
-              }
-              if (
-                selected === 'meta-llama/Llama-3.1-8B-Instruct' &&
-                currentPlan !== 'chetak' &&
-                currentPlan !== 'arka'
-              ) {
-                return (
-                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-300 text-xs mt-1">
-                    <span className="font-medium">Chetak 8B selected. ₹299/mo tier available:</span>
-                    <button
-                      type="button"
-                      onClick={() => onOpenSubscription('chetak')}
-                      className="px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white font-semibold text-[11px] shadow-sm cursor-pointer"
-                    >
-                      Subscribe
-                    </button>
-                  </div>
-                );
-              }
-              if (
-                (selected === 'meta-llama/Llama-3.3-70B-Instruct' ||
-                  selected === 'meta-llama/Llama-3-70B-Instruct') &&
-                currentPlan !== 'arka'
-              ) {
-                return (
-                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs mt-1">
-                    <span className="font-medium">Arka 70B selected. ₹799/mo flagship tier:</span>
-                    <button
-                      type="button"
-                      onClick={() => onOpenSubscription('arka')}
-                      className="px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-500 text-white font-semibold text-[11px] shadow-sm cursor-pointer"
-                    >
-                      Subscribe
-                    </button>
-                  </div>
-                );
-              }
-              return null;
-            })()}
           </div>
 
           {/* Subscription Plans Card */}

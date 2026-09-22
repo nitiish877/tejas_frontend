@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { Message, SubscriptionPlanType, UserProfile } from '../types';
 import { AppVersionInfo, getClientVersion } from '../version';
 import { Logo } from './Logo';
@@ -127,6 +127,50 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   };
 
   const modelInfo = getModelLabel();
+
+  // Only show the models the user actually owns: 1B (always free) plus whatever
+  // paid plan is currently active. Subscribing happens only via the Subscription modal.
+  const availableModels = useMemo(() => {
+    const list = [
+      {
+        id: 'meta-llama/Llama-3.2-1B-Instruct',
+        name: '1B (Free)',
+        desc: 'Fast, lightweight & free for all',
+        badge: 'Free',
+        badgeClass: 'bg-zinc-700/50 text-zinc-300',
+        plan: 'free' as SubscriptionPlanType,
+      },
+    ];
+    if (subscriptionPlan === 'cat') {
+      list.push({
+        id: 'meta-llama/Llama-3.2-3B-Instruct',
+        name: 'Cat (3B)',
+        desc: 'Balanced reasoning & speed',
+        badge: 'Active',
+        badgeClass: 'bg-purple-500/20 text-purple-300 border border-purple-500/30',
+        plan: 'cat' as SubscriptionPlanType,
+      });
+    } else if (subscriptionPlan === 'chetak') {
+      list.push({
+        id: 'meta-llama/Llama-3.1-8B-Instruct',
+        name: 'Chetak (8B)',
+        desc: 'Pro reasoning & coding',
+        badge: 'Active',
+        badgeClass: 'bg-blue-500/20 text-blue-300 border border-blue-500/30',
+        plan: 'chetak' as SubscriptionPlanType,
+      });
+    } else if (subscriptionPlan === 'arka') {
+      list.push({
+        id: 'meta-llama/Llama-3.3-70B-Instruct',
+        name: 'Arka (70B)',
+        desc: 'Flagship power & deep reasoning',
+        badge: 'Active',
+        badgeClass: 'bg-amber-500/20 text-amber-300 border border-amber-500/30',
+        plan: 'arka' as SubscriptionPlanType,
+      });
+    }
+    return list;
+  }, [subscriptionPlan]);
 
   // Track whether the user is near the bottom of the scroll container.
   // If yes, we auto-scroll on new messages; if not, we leave their scroll position alone.
@@ -307,7 +351,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               <ChevronDown className={`w-3.5 h-3.5 opacity-60 transition-transform ${modelDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 
-            {/* Instant model selection dropdown */}
+            {/* Instant model selection dropdown — only shows owned models */}
             {modelDropdownOpen && (
               <div
                 className={`absolute right-0 top-full mt-2 w-72 rounded-xl border shadow-xl py-1.5 z-50 ${
@@ -318,47 +362,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   Switch Active Model
                 </div>
 
-                {[
-                  {
-                    id: 'meta-llama/Llama-3.2-1B-Instruct',
-                    name: '1B (Free)',
-                    desc: 'Fast, lightweight & free for all',
-                    badge: 'Free',
-                    badgeClass: 'bg-zinc-700/50 text-zinc-300',
-                    plan: 'free' as SubscriptionPlanType,
-                  },
-                  {
-                    id: 'meta-llama/Llama-3.2-3B-Instruct',
-                    name: 'Cat (3B)',
-                    desc: '₹1 Test tier • Sign In Required',
-                    badge: '₹1 Test',
-                    badgeClass: 'bg-purple-500/20 text-purple-300 border border-purple-500/30',
-                    plan: 'cat' as SubscriptionPlanType,
-                  },
-                  {
-                    id: 'meta-llama/Llama-3.1-8B-Instruct',
-                    name: 'Chetak (8B)',
-                    desc: '₹299/mo Reasoning • Sign In Required',
-                    badge: '₹299/mo',
-                    badgeClass: 'bg-blue-500/20 text-blue-300 border border-blue-500/30',
-                    plan: 'chetak' as SubscriptionPlanType,
-                  },
-                  {
-                    id: 'meta-llama/Llama-3.3-70B-Instruct',
-                    name: 'Arka (70B)',
-                    desc: '₹799/mo Flagship • Sign In Required',
-                    badge: '₹799/mo',
-                    badgeClass: 'bg-amber-500/20 text-amber-300 border border-amber-500/30',
-                    plan: 'arka' as SubscriptionPlanType,
-                  },
-                ].map((item) => {
+                {availableModels.map((item) => {
                   const isSelected = selectedModel === item.id;
-                  const isGuestUser =
-                    currentUser.provider === 'guest' ||
-                    !currentUser.email ||
-                    currentUser.id === 'user_guest' ||
-                    String(currentUser.id).startsWith('guest_');
-                  const isLockedForGuest = isGuestUser && item.id !== 'meta-llama/Llama-3.2-1B-Instruct';
 
                   return (
                     <div
@@ -367,11 +372,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                         isSelected ? (isDark ? 'bg-zinc-800/70' : 'bg-zinc-100') : ''
                       }`}
                       onClick={() => {
-                        if (isLockedForGuest) {
-                          setModelDropdownOpen(false);
-                          onOpenAuth?.();
-                          return;
-                        }
                         onSelectModel?.(item.id);
                         setModelDropdownOpen(false);
                       }}
@@ -379,39 +379,15 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                       <div className="flex flex-col">
                         <div className="flex items-center gap-1.5">
                           <span className="text-xs font-semibold">{item.name}</span>
-                          {isLockedForGuest && (
-                            <Lock className="w-3 h-3 text-amber-400 shrink-0" />
-                          )}
-                          {isSelected && !isLockedForGuest && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                          {isSelected && <Check className="w-3.5 h-3.5 text-emerald-400" />}
                         </div>
                         <span className="text-[10px] opacity-70">{item.desc}</span>
                       </div>
 
                       <div className="flex items-center gap-1.5">
-                        {isLockedForGuest ? (
-                          <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300">
-                            <Lock className="w-2.5 h-2.5" /> Sign In
-                          </span>
-                        ) : (
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${item.badgeClass}`}>
-                            {item.badge}
-                          </span>
-                        )}
-                        {!isLockedForGuest && item.plan !== 'free' && subscriptionPlan !== item.plan && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSelectModel?.(item.id);
-                              setModelDropdownOpen(false);
-                              onOpenSubscription?.(item.plan);
-                            }}
-                            className="text-[10px] font-bold px-2 py-0.5 rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-100"
-                            title="Subscribe to plan"
-                          >
-                            Sub
-                          </button>
-                        )}
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${item.badgeClass}`}>
+                          {item.badge}
+                        </span>
                       </div>
                     </div>
                   );

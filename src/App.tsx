@@ -155,6 +155,14 @@ export default function App() {
   };
 
   const handleInitiateCheckout = (item: PaymentItem) => {
+    // Guest payment would be lost on refresh/logout — force sign-in first.
+    if (isGuestUser(currentUser)) {
+      setAuthNotice(
+        'Please sign in or create an account to subscribe. Guest payments are not saved, so your plan would be lost on refresh.'
+      );
+      setAuthModalOpen(true);
+      return;
+    }
     setPendingPaymentItem(item);
     setPaymentModalOpen(true);
   };
@@ -512,6 +520,17 @@ export default function App() {
     setActiveChatId(null);
     setIsTempChatActive(false);
     setCurrentUser(DEFAULT_USER);
+    // Reset the active model + subscription on logout so the previous account's
+    // paid model doesn't stay active for the next (guest) session.
+    // This also updates the top-right model pill and the sidebar plan badge.
+    setSettings((prev) => ({
+      ...prev,
+      selectedModel: 'meta-llama/Llama-3.2-1B-Instruct',
+      subscriptionPlan: 'free',
+      subscriptionExpiresAt: undefined,
+      subscriptionStartedAt: undefined,
+      lastPaymentId: undefined,
+    }));
     localStorage.removeItem(STORAGE_KEY_USER);
     localStorage.removeItem(STORAGE_KEY_CHATS);
     sessionStorage.removeItem(STORAGE_KEY_CHATS);

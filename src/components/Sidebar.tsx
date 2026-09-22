@@ -281,7 +281,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        {/* Subscription / Plan quick access in sidebar */}
+                {/* Subscription / Plan quick access in sidebar */}
         {onOpenSubscription && (
           <div className="px-3 pb-2">
             <button
@@ -317,11 +317,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     ? 'Tejas Chetak (8B)'
                     : subscriptionPlan === 'cat'
                     ? 'Tejas Cat (3B)'
-                    : 'Upgrade plan'}
+                    : 'Try 1 month for ₹1'}
                 </span>
               </div>
               <span className="text-[10px] uppercase font-bold tracking-wider opacity-80">
-                {subscriptionPlan === 'free' ? 'From ₹1' : 'Active'}
+                {subscriptionPlan === 'free' ? 'then ₹199' : 'Active'}
               </span>
             </button>
           </div>

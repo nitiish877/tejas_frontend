@@ -172,6 +172,77 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     });
   };
 
+  // ---------------------------------------------------------------
+  // Animated indicators: a hash of the message id picks a stable
+  // variant per message, so different messages get different
+  // spinners/cursors — but the same message keeps the same one.
+  // ---------------------------------------------------------------
+
+  // Spinner variants — shown while the assistant response is still empty
+  const spinnerVariants = ['dots', 'ring', 'bars', 'pulse', 'cursor'] as const;
+  const getSpinnerVariant = (id: string): (typeof spinnerVariants)[number] => {
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+    return spinnerVariants[hash % spinnerVariants.length];
+  };
+
+  const renderTypingSpinner = (variant: (typeof spinnerVariants)[number]) => {
+    switch (variant) {
+      case 'dots':
+        return (
+          <span className="spinner-dots text-zinc-400">
+            <span /><span /><span />
+          </span>
+        );
+      case 'ring':
+        return <span className="spinner-ring text-zinc-400" />;
+      case 'bars':
+        return (
+          <span className="spinner-bars text-zinc-400">
+            <span /><span /><span />
+          </span>
+        );
+      case 'pulse':
+        return <span className="spinner-pulse text-zinc-400" />;
+      case 'cursor':
+      default:
+        return <span className="streaming-cursor" />;
+    }
+  };
+
+  // Cursor variants — shown while the assistant is streaming text
+  const cursorVariants = ['block', 'line', 'circle', 'underline', 'glow', 'x'] as const;
+  const getCursorVariant = (id: string): (typeof cursorVariants)[number] => {
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+    return cursorVariants[hash % cursorVariants.length];
+  };
+
+  const renderStreamingCursor = (variant: (typeof cursorVariants)[number]) => {
+    switch (variant) {
+      case 'line':
+        return <span className="streaming-cursor-line" />;
+      case 'circle':
+        return <span className="streaming-cursor-circle" />;
+      case 'underline':
+        return <span className="streaming-cursor-underline" />;
+      case 'glow':
+        return <span className="streaming-cursor-glow" />;
+      case 'x':
+        return (
+          <span className="streaming-cursor-x" aria-hidden>
+            <svg viewBox="0 0 24 24" width="14" height="14">
+              <path d="M5 5 L19 19" className="x-line-1" />
+              <path d="M19 5 L5 19" className="x-line-2" />
+            </svg>
+          </span>
+        );
+      case 'block':
+      default:
+        return <span className="streaming-cursor" />;
+    }
+  };
+
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
       {/* Top Header Bar */}
@@ -535,7 +606,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                           <MarkdownMessage content={msg.content} isDark={isDark} />
 
                           {isStreaming && isLastAssistant && (
-                            <span className="streaming-cursor" />
+                            msg.content.trim().length === 0
+                              ? renderTypingSpinner(getSpinnerVariant(msg.id))
+                              : renderStreamingCursor(getCursorVariant(msg.id))
                           )}
                         </div>
                       )}

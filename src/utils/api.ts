@@ -105,6 +105,19 @@ export const registerAccount = (getUrl: UrlBuilder, body: { name: string; email:
 
 export const loginAccount = (getUrl: UrlBuilder, body: { email: string; password: string }) =>
   request<AuthResult>(getUrl, '/api/auth/login', { method: 'POST', body: JSON.stringify(body) });
+// Firebase (Google) sign-in: frontend gets an ID token from Firebase, backend
+// verifies it with the Admin SDK and returns our own JWT + user record.
+export const loginWithFirebase = (getUrl: UrlBuilder, idToken: string) =>
+  request<AuthResult>(
+    getUrl,
+    '/api/auth/firebase',
+    { method: 'POST', body: JSON.stringify({ idToken }) }
+  );
+
+// Fetch which sign-in providers are enabled on the server
+export const fetchAuthProviders = (getUrl: UrlBuilder) =>
+  request<{ email: boolean; google: boolean }>(getUrl, '/api/auth/providers');
+
 
 export const fetchMe = (getUrl: UrlBuilder) => request<{ user: UserProfile }>(getUrl, '/api/auth/me', {}, true);
 

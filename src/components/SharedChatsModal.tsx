@@ -114,7 +114,7 @@ export const SharedChatsModal: React.FC<SharedChatsModalProps> = ({
             <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
               <Share2 className="w-8 h-8 text-zinc-500" />
               <p className="text-sm text-zinc-400">No shared chats yet.</p>
-              <p className="text-xs text-zinc-500">Jab aap koi chat share karenge, wo yahan dikhegi.</p>
+              <p className="text-xs text-zinc-500">When you share a chat, it will appear here.</p>
             </div>
           )}
 

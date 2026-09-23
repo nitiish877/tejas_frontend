@@ -1,5 +1,12 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
-import { getAuth, Auth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import {
+  getAuth,
+  Auth,
+  GoogleAuthProvider,
+  GithubAuthProvider,
+  OAuthProvider,
+  signInWithPopup,
+} from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: (import.meta.env.VITE_FIREBASE_API_KEY as string) || '',
@@ -26,14 +33,37 @@ if (firebaseEnabled) {
 
 export const firebaseAuth = authInstance;
 
-// Sign in with Google via popup. Returns the Firebase ID token.
+// ---- Google ----
 export async function signInWithGooglePopup(): Promise<string> {
-  if (!firebaseAuth) {
-    throw new Error('Google sign-in is not configured. Contact support.');
-  }
+  if (!firebaseAuth) throw new Error('Google sign-in is not configured.');
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
   const result = await signInWithPopup(firebaseAuth, provider);
-  const idToken = await result.user.getIdToken();
-  return idToken;
+  return await result.user.getIdToken();
+}
+
+// ---- GitHub ----
+export async function signInWithGitHubPopup(): Promise<string> {
+  if (!firebaseAuth) throw new Error('GitHub sign-in is not configured.');
+  const provider = new GithubAuthProvider();
+  // Request email scope (private emails ke liye zaroori)
+  provider.addScope('user:email');
+  const result = await signInWithPopup(firebaseAuth, provider);
+  return await result.user.getIdToken();
+}
+
+// ---- Microsoft ----
+export async function signInWithMicrosoftPopup(): Promise<string> {
+  if (!firebaseAuth) throw new Error('Microsoft sign-in is not configured.');
+  const provider = new OAuthProvider('microsoft.com');
+  provider.setCustomParameters({
+    // Force account picker (optional but recommended)
+    prompt: 'select_account',
+  });
+  // Email scope (Microsoft Graph se email fetch karta hai)
+  provider.addScope('email');
+  provider.addScope('openid');
+  provider.addScope('profile');
+  const result = await signInWithPopup(firebaseAuth, provider);
+  return await result.user.getIdToken();
 }

@@ -116,7 +116,10 @@ export const loginWithFirebase = (getUrl: UrlBuilder, idToken: string) =>
 
 // Fetch which sign-in providers are enabled on the server
 export const fetchAuthProviders = (getUrl: UrlBuilder) =>
-  request<{ email: boolean; google: boolean }>(getUrl, '/api/auth/providers');
+  request<{ email: boolean; google: boolean; github: boolean; microsoft: boolean }>(
+    getUrl,
+    '/api/auth/providers'
+  );
 
 
 export const fetchMe = (getUrl: UrlBuilder) => request<{ user: UserProfile }>(getUrl, '/api/auth/me', {}, true);

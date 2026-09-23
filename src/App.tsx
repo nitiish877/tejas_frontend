@@ -173,6 +173,8 @@ export default function App() {
 
   const [paymentHistoryOpen, setPaymentHistoryOpen] = useState(false);
   const [sharedChatsOpen, setSharedChatsOpen] = useState(false);
+    // "Ask about this" — selected text from an earlier assistant message
+  const [askAbout, setAskAbout] = useState<{ text: string; messageId: string } | null>(null);
   const handleOpenSubscription = (plan: SubscriptionPlanType = 'cat') => {
     setHighlightPlan(plan);
     setSubscriptionModalOpen(true);
@@ -799,14 +801,22 @@ export default function App() {
   };
 
   // Main streaming request to the Llama REST API
-  const handleSendMessage = async (text: string) => {
+  const handleSendMessage = async (
+    text: string,
+    options?: { editedMessageId?: string; contextText?: string; contextMessageId?: string }
+  ) => {
+    const editedMessageId = options?.editedMessageId;
+    const contextText = options?.contextText;
+    const contextMessageId = options?.contextMessageId;
+    // Clear the ask-about chip as soon as we start sending
+    if (contextText) setAskAbout(null);
     if (!text.trim() || isStreaming) return;
 
     let targetChatId = activeChatId;
     let targetTitle = 'New Conversation';
 
-    // Create a session if none exists
-    if (!isTempChatActive && (!targetChatId || !currentChat)) {
+    // Create a session if none exists — skipped during edit (chat already exists)
+    if (!editedMessageId && !isTempChatActive && (!targetChatId || !currentChat)) {
       targetTitle = text.slice(0, 32) + (text.length > 32 ? '...' : '');
       const newSession: ChatSession = {
         id: 'chat_' + Date.now(),
@@ -820,13 +830,6 @@ export default function App() {
       setActiveChatId(newSession.id);
     }
 
-    const userMessage: Message = {
-      id: 'msg_user_' + Date.now(),
-      role: 'user',
-      content: text,
-      timestamp: Date.now(),
-    };
-
     const assistantMessageId = 'msg_assistant_' + (Date.now() + 1);
     const assistantMessage: Message = {
       id: assistantMessageId,
@@ -836,24 +839,67 @@ export default function App() {
       status: 'streaming',
     };
 
+    // Compute the history we send to the model BEFORE setState (state updates are async).
+    let historyForModel: Message[];
+
+    if (editedMessageId) {
+      // EDIT FLOW — update the user message, drop everything after it.
+      const baseList = isTempChatActive
+        ? tempChatMessages
+        : chats.find((c) => c.id === targetChatId)?.messages || [];
+      const idx = baseList.findIndex((m) => m.id === editedMessageId);
+      if (idx === -1) return;
+      historyForModel = baseList
+        .slice(0, idx + 1)
+        .map((m) => (m.id === editedMessageId ? { ...m, content: text, timestamp: Date.now() } : m));
+    } else {
+      // NORMAL FLOW — prior messages + brand new user message.
+      const userMessage: Message = {
+        id: 'msg_user_' + Date.now(),
+        role: 'user',
+        content: text,
+        timestamp: Date.now(),
+        contextText: contextText || undefined,
+        contextMessageId: contextMessageId || undefined,
+      };
+      historyForModel = [...activeMessages, userMessage];
+    }
+
     if (isTempChatActive) {
-      setTempChatMessages((prev) => [...prev, userMessage, assistantMessage]);
+      if (editedMessageId) {
+        setTempChatMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === editedMessageId);
+          if (idx === -1) return prev;
+          const head = prev
+            .slice(0, idx + 1)
+            .map((m) => (m.id === editedMessageId ? { ...m, content: text, timestamp: Date.now() } : m));
+          return [...head, assistantMessage];
+        });
+      } else {
+        setTempChatMessages((prev) => [...prev, historyForModel[historyForModel.length - 1], assistantMessage]);
+      }
     } else {
       setChats((prev) =>
         prev.map((c) => {
-          if (c.id === targetChatId) {
+          if (c.id !== targetChatId) return c;
+          if (editedMessageId) {
+            const idx = c.messages.findIndex((m) => m.id === editedMessageId);
+            if (idx === -1) return c;
+            const head = c.messages
+              .slice(0, idx + 1)
+              .map((m) => (m.id === editedMessageId ? { ...m, content: text, timestamp: Date.now() } : m));
+            return { ...c, updatedAt: Date.now(), messages: [...head, assistantMessage] };
+          } else {
             const isFirst = c.messages.length === 0;
-            const updatedTitle = isFirst
-              ? text.slice(0, 32) + (text.length > 32 ? '...' : '')
-              : c.title;
+            const updatedTitle = isFirst ? text.slice(0, 32) + (text.length > 32 ? '...' : '') : c.title;
+            const newUserMsg = historyForModel[historyForModel.length - 1];
             return {
               ...c,
               title: updatedTitle,
               updatedAt: Date.now(),
-              messages: [...c.messages, userMessage, assistantMessage],
+              messages: [...c.messages, newUserMsg, assistantMessage],
             };
           }
-          return c;
         })
       );
     }
@@ -863,10 +909,24 @@ export default function App() {
     abortControllerRef.current = controller;
 
     try {
-      const historyToSend = [
-        ...activeMessages.filter((m) => m.content.trim().length > 0),
-        userMessage,
-      ];
+      // Expand any "Ask about this" user messages so the model understands the context.
+      const expandForModel = (m: Message): Message => {
+        if (m.role === 'user' && m.contextText) {
+          return {
+            ...m,
+            content:
+              `The user is asking about a specific part of your previous response.\n\n` +
+              `--- SELECTED TEXT FROM YOUR EARLIER RESPONSE ---\n` +
+              `${m.contextText}\n` +
+              `--- END SELECTED TEXT ---\n\n` +
+              `User's question about the above:\n${m.content}`,
+          };
+        }
+        return m;
+      };
+      const historyToSend = historyForModel
+        .filter((m) => m.content.trim().length > 0)
+        .map(expandForModel);
 
       const response = await fetch(getApiUrl('/api/chat'), {
         method: 'POST',
@@ -1025,6 +1085,45 @@ export default function App() {
       abortControllerRef.current = null;
     }
   };
+  // Scroll to a message and highlight the snippet the user had selected.
+  const handleJumpToSource = (messageId: string, selectedText: string) => {
+    const el = document.querySelector(
+      `[data-message-id="${messageId}"]`
+    ) as HTMLElement | null;
+    if (!el) return;
+
+    // Scroll the source message into the middle of the viewport
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // After the scroll settles, find the text within that message and select it
+    setTimeout(() => {
+      try {
+        window.getSelection()?.removeAllRanges();
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        let node: Node | null = null;
+        // Simple single-node match
+        while ((node = walker.nextNode())) {
+          const value = node.nodeValue || '';
+          const idx = value.indexOf(selectedText);
+          if (idx !== -1) {
+            const range = document.createRange();
+            range.setStart(node, idx);
+            range.setEnd(node, idx + selectedText.length);
+            const sel = window.getSelection();
+            sel?.removeAllRanges();
+            sel?.addRange(range);
+            // Clear the selection after a moment
+            setTimeout(() => window.getSelection()?.removeAllRanges(), 2600);
+            return;
+          }
+        }
+        // Fallback: if the exact text isn't found in a single text node (markdown split),
+        // pulse the whole message so the user sees which one it was
+        el.classList.add('ring-2', 'ring-cyan-400/70', 'rounded-2xl');
+        setTimeout(() => el.classList.remove('ring-2', 'ring-cyan-400/70', 'rounded-2xl'), 2000);
+      } catch {}
+    }, 600);
+  };
 
   const handleRegenerate = () => {
     if (activeMessages.length === 0 || isStreaming) return;
@@ -1135,6 +1234,9 @@ export default function App() {
           onShareChat={handleShareChat}
           isSharing={isSharing}
           canShare={!isTempChatActive && activeMessages.length > 0}
+          onSendMessage={handleSendMessage}
+          onAskAbout={(text, messageId) => setAskAbout({ text, messageId })}
+          onJumpToSource={handleJumpToSource}
           renderCenteredInput={() => (
             <ChatInput
               onSendMessage={handleSendMessage}
@@ -1143,6 +1245,9 @@ export default function App() {
               isDark={isDark}
               isCentered={true}
               disableAutoType={isAnyModalOpen}
+              contextText={askAbout?.text}
+              contextMessageId={askAbout?.messageId}
+              onClearContext={() => setAskAbout(null)}
             />
           )}
         />
@@ -1156,6 +1261,9 @@ export default function App() {
             isDark={isDark}
             isCentered={false}
             disableAutoType={isAnyModalOpen}
+            contextText={askAbout?.text}
+            contextMessageId={askAbout?.messageId}
+            onClearContext={() => setAskAbout(null)}
           />
         )}
       </main>

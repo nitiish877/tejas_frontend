@@ -19,6 +19,10 @@ import {
   ArrowUpCircle,
   Share2,
   Loader2,
+  Pencil,
+  X,
+  Quote,
+  MessageCircleQuestion,
 } from 'lucide-react';
 
 interface ChatAreaProps {
@@ -45,6 +49,9 @@ interface ChatAreaProps {
   onShareChat?: () => void;
   isSharing?: boolean;
   canShare?: boolean;
+  onSendMessage?: (text: string, options?: { editedMessageId?: string }) => void;
+  onAskAbout?: (text: string, messageId: string) => void;
+  onJumpToSource?: (messageId: string, selectedText: string) => void;
 }
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
@@ -71,6 +78,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   onShareChat,
   isSharing = false,
   canShare = false,
+  onSendMessage,
+  onAskAbout,
+  onJumpToSource,
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -79,15 +89,44 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const modelMenuRef = useRef<HTMLDivElement>(null);
 
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
+
+  const [regenState, setRegenState] = useState<{
+    oldContent: string;
+    variant: 'A' | 'B' | 'C';
+  } | null>(null);
+
+  // Selection → floating "Ask about this" button
+  const [askAboutButton, setAskAboutButton] = useState<{
+    text: string;
+    messageId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) {
         setModelDropdownOpen(false);
       }
+      // Close Ask About button if clicked outside (but only if it's not the button itself — button has its own onClick)
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-ask-about-btn]')) {
+        setAskAboutButton(null);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (!regenState) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg?.role === 'assistant' && lastMsg.content.trim().length > 0) {
+      setRegenState(null);
+    }
+  }, [messages, regenState]);
 
   const daysRemaining = subscriptionExpiresAt
     ? Math.max(0, Math.ceil((subscriptionExpiresAt - Date.now()) / (1000 * 60 * 60 * 24)))
@@ -130,8 +169,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
   const modelInfo = getModelLabel();
 
-  // Only show the models the user actually owns: 1B (always free) plus every
-  // paid plan they've purchased. Subscribing happens only via the Subscription modal.
   const availableModels = useMemo(() => {
     const list = [
       {
@@ -176,24 +213,19 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     return list;
   }, [ownedPlans]);
 
-  // Track whether the user is near the bottom of the scroll container.
-  // If yes, we auto-scroll on new messages; if not, we leave their scroll position alone.
   const handleMessagesScroll = () => {
     const el = scrollContainerRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     stickToBottomRef.current = distanceFromBottom < 120;
+    // Any active selection-aware button should hide when scrolling
+    setAskAboutButton(null);
   };
 
-  // Auto-scroll to the bottom on new messages.
-  // We never use scrollIntoView() here, because that would scroll the whole page
-  // (including the header) — we only scroll the messages container so the header stays visible.
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
     const lastMsg = messages[messages.length - 1];
-    // When the user sends a message, always jump to bottom.
-    // Otherwise only auto-scroll if the user was already near the bottom.
     if (lastMsg?.role === 'user') stickToBottomRef.current = true;
     if (stickToBottomRef.current) {
       el.scrollTo({ top: el.scrollHeight, behavior: isStreaming ? 'auto' : 'smooth' });
@@ -204,6 +236,83 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     navigator.clipboard.writeText(text);
     setCopiedMessageId(id);
     setTimeout(() => setCopiedMessageId(null), 2000);
+  };
+
+  // ---- Selection detection ----
+  const handleSelectionCheck = (_e: React.MouseEvent | React.TouchEvent) => {
+    // Wait for the browser to update the selection, then read it
+    setTimeout(() => {
+      try {
+        const sel = window.getSelection();
+        const text = sel?.toString().trim() || '';
+        if (!text || text.length < 3) {
+          setAskAboutButton(null);
+          return;
+        }
+        const range = sel!.getRangeAt(0);
+        const container = range.commonAncestorContainer;
+        const el =
+          container.nodeType === 1
+            ? (container as Element)
+            : (container.parentElement as Element | null);
+        const msgEl = el?.closest('[data-message-role="assistant"]') as HTMLElement | null;
+        if (!msgEl) {
+          setAskAboutButton(null);
+          return;
+        }
+        const messageId = msgEl.getAttribute('data-message-id') || '';
+        if (!messageId) {
+          setAskAboutButton(null);
+          return;
+        }
+        const rect = range.getBoundingClientRect();
+        // Clamp so button stays on-screen
+        const x = Math.min(rect.right + 6, window.innerWidth - 150);
+        const y = Math.min(rect.bottom + 6, window.innerHeight - 50);
+        setAskAboutButton({ text, messageId, x, y });
+      } catch {
+        setAskAboutButton(null);
+      }
+    }, 40);
+  };
+
+  const handleAskAboutClick = () => {
+    if (!askAboutButton) return;
+    onAskAbout?.(askAboutButton.text, askAboutButton.messageId);
+    setAskAboutButton(null);
+    window.getSelection()?.removeAllRanges();
+  };
+
+  // ---- Edit ----
+  const handleStartEdit = (msg: Message) => {
+    setEditingMessageId(msg.id);
+    setEditingText(msg.content);
+  };
+  const handleCancelEdit = () => {
+    setEditingMessageId(null);
+    setEditingText('');
+  };
+  const handleSaveEdit = (msgId: string) => {
+    const trimmed = editingText.trim();
+    if (!trimmed) return;
+    setEditingMessageId(null);
+    setEditingText('');
+    stickToBottomRef.current = true;
+    onSendMessage?.(trimmed, { editedMessageId: msgId });
+    setTimeout(() => {
+      const el = scrollContainerRef.current;
+      if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    }, 60);
+  };
+
+  // ---- Regenerate ----
+  const handleRegenerateClick = () => {
+    const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+    if (!lastAssistant) return;
+    const variants: Array<'A' | 'B' | 'C'> = ['A', 'B', 'C'];
+    const variant = variants[Math.floor(Math.random() * variants.length)];
+    setRegenState({ oldContent: lastAssistant.content, variant });
+    onRegenerate();
   };
 
   const starterSuggestions = [
@@ -220,13 +329,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     });
   };
 
-  // ---------------------------------------------------------------
-  // Animated indicators: a hash of the message id picks a stable
-  // variant per message, so different messages get different
-  // spinners/cursors — but the same message keeps the same one.
-  // ---------------------------------------------------------------
-
-  // Spinner variants — shown while the assistant response is still empty
   const spinnerVariants = ['dots', 'ring', 'bars', 'pulse', 'cursor'] as const;
   const getSpinnerVariant = (id: string): (typeof spinnerVariants)[number] => {
     let hash = 0;
@@ -258,7 +360,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     }
   };
 
-  // Cursor variants — shown while the assistant is streaming text
   const cursorVariants = ['block', 'line', 'circle', 'underline', 'glow', 'x'] as const;
   const getCursorVariant = (id: string): (typeof cursorVariants)[number] => {
     let hash = 0;
@@ -302,7 +403,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         }`}
       >
         <div className="flex items-center gap-3">
-          {/* Logo button — opens the sidebar drawer */}
           <button
             id="header-logo-btn"
             type="button"
@@ -329,9 +429,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           )}
         </div>
 
-        {/* Top right: active model pill, share, sign-in, and upgrade buttons */}
         <div className="flex items-center gap-2 relative">
-          {/* Active model pill with instant dropdown */}
           <div ref={modelMenuRef} className="relative">
             <button
               id="header-model-pill-btn"
@@ -355,7 +453,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               <ChevronDown className={`w-3.5 h-3.5 opacity-60 transition-transform ${modelDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 
-            {/* Instant model selection dropdown — only shows owned models */}
             {modelDropdownOpen && (
               <div
                 className={`absolute right-0 top-full mt-2 w-72 rounded-xl border shadow-xl py-1.5 z-50 ${
@@ -368,7 +465,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
                 {availableModels.map((item) => {
                   const isSelected = selectedModel === item.id;
-
                   return (
                     <div
                       key={item.id}
@@ -387,7 +483,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                         </div>
                         <span className="text-[10px] opacity-70">{item.desc}</span>
                       </div>
-
                       <div className="flex items-center gap-1.5">
                         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${item.badgeClass}`}>
                           {item.badge}
@@ -400,7 +495,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             )}
           </div>
 
-          {/* Share button — colorful, shown only when there's an actual chat to share */}
           {onShareChat && canShare && (
             <button
               id="header-share-btn"
@@ -415,7 +509,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             </button>
           )}
 
-          {/* Sign In / Register button (guest only) */}
           {onOpenAuth && (currentUser.provider === 'guest' || !currentUser.email || currentUser.email.includes('guest')) && (
             <button
               id="header-auth-btn"
@@ -432,7 +525,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             </button>
           )}
 
-          {/* Upgrade Plan button */}
           {onOpenSubscription && (
             <button
               id="header-upgrade-btn"
@@ -469,7 +561,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         </div>
       </header>
 
-      {/* Over-the-air update available banner */}
+      {/* Update banner */}
       {updateInfo && updateInfo.version && updateInfo.version !== getClientVersion() && (
         <div className="w-full bg-gradient-to-r from-blue-600/20 via-indigo-600/20 to-blue-600/20 border-b border-blue-500/30 px-4 py-2 flex items-center justify-between text-xs text-blue-200 transition-all shadow-sm shrink-0">
           <div className="flex items-center gap-2">
@@ -493,9 +585,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         </div>
       )}
 
-      {/* Main content: empty state (centered input) or conversation history */}
+      {/* Main content */}
       {messages.length === 0 ? (
-        /* Empty state: centered chat input */
         <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 overflow-y-auto">
           <div className="max-w-2xl w-full text-center space-y-6 animate-in fade-in duration-200 py-6">
             <div className="flex justify-center mb-2">
@@ -506,14 +597,12 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               What can I help with?
             </h1>
 
-            {/* Centered chat input box */}
             {renderCenteredInput && (
               <div className="w-full">
                 {renderCenteredInput()}
               </div>
             )}
 
-            {/* Minimalist starter prompt chips */}
             <div className="flex flex-wrap items-center justify-center gap-2 pt-2 max-w-xl mx-auto">
               {starterSuggestions.map((prompt, idx) => (
                 <button
@@ -533,10 +622,11 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           </div>
         </div>
       ) : (
-        /* Conversation history */
         <div
           ref={scrollContainerRef}
           onScroll={handleMessagesScroll}
+          onMouseUp={handleSelectionCheck}
+          onTouchEnd={handleSelectionCheck}
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-6 py-6 space-y-6"
         >
           <div className="max-w-3xl mx-auto space-y-6">
@@ -546,15 +636,17 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 !isUser &&
                 index === messages.length - 1 &&
                 msg.role === 'assistant';
+              const isEditingThis = editingMessageId === msg.id;
 
               return (
                 <div
                   key={msg.id}
+                  data-message-id={msg.id}
+                  data-message-role={msg.role}
                   className={`group relative flex gap-3 sm:gap-4 ${
                     isUser ? 'justify-end' : 'justify-start'
                   } items-start`}
                 >
-                  {/* Assistant avatar */}
                   {!isUser && (
                     <div className="shrink-0 pt-0.5">
                       <div className="w-7 h-7 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center">
@@ -563,7 +655,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                     </div>
                   )}
 
-                  {/* Message bubble container */}
                   <div className="relative max-w-[85%] sm:max-w-[80%] flex flex-col">
                     <div
                       className={`relative rounded-2xl px-4 py-2.5 text-sm sm:text-base leading-relaxed ${
@@ -574,9 +665,94 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                           : 'text-inherit self-start px-0 sm:px-1'
                       }`}
                     >
-                      {/* Message content */}
                       {isUser ? (
-                        <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+                        isEditingThis ? (
+                          <div className="w-full min-w-[260px] flex flex-col gap-2">
+                            <textarea
+                              value={editingText}
+                              onChange={(e) => setEditingText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                                  e.preventDefault();
+                                  handleSaveEdit(msg.id);
+                                } else if (e.key === 'Escape') {
+                                  e.preventDefault();
+                                  handleCancelEdit();
+                                }
+                              }}
+                              autoFocus
+                              rows={Math.min(8, Math.max(2, editingText.split('\n').length))}
+                              className={`w-full resize-none rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors ${
+                                isDark
+                                  ? 'bg-zinc-800 text-zinc-100 border border-zinc-600 focus:border-zinc-400'
+                                  : 'bg-white text-zinc-900 border border-zinc-300 focus:border-zinc-500'
+                              }`}
+                            />
+                            <div className="flex items-center justify-between gap-2">
+                              <span className={`text-[10px] ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                                Ctrl+Enter to save • Esc to cancel
+                              </span>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={handleCancelEdit}
+                                  title="Cancel"
+                                  className={`p-1.5 rounded-lg transition-colors ${
+                                    isDark
+                                      ? 'hover:bg-zinc-700 text-zinc-400 hover:text-zinc-100'
+                                      : 'hover:bg-zinc-200 text-zinc-500 hover:text-zinc-800'
+                                  }`}
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveEdit(msg.id)}
+                                  disabled={!editingText.trim()}
+                                  title="Save & resend"
+                                  className={`p-1.5 rounded-lg transition-colors disabled:opacity-40 ${
+                                    isDark
+                                      ? 'bg-white text-zinc-950 hover:bg-zinc-200'
+                                      : 'bg-zinc-900 text-white hover:bg-zinc-800'
+                                  }`}
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-2">
+                            {/* Reference chip if user's message was "Ask about this" */}
+                            {msg.contextText && (
+                              <button
+                                type="button"
+                                onClick={() => onJumpToSource?.(msg.contextMessageId || '', msg.contextText!)}
+                                title="Jump to the original text"
+                                className={`text-left rounded-lg border-l-2 px-2.5 py-1.5 transition-colors ${
+                                  isDark
+                                    ? 'bg-zinc-800/70 border-cyan-400/70 hover:bg-zinc-800'
+                                    : 'bg-zinc-100 border-cyan-500/70 hover:bg-zinc-200'
+                                }`}
+                              >
+                                <div className={`flex items-center gap-1 text-[10px] font-semibold mb-0.5 ${
+                                  isDark ? 'text-cyan-300' : 'text-cyan-700'
+                                }`}>
+                                  <Quote className="w-2.5 h-2.5" />
+                                  <span>About this part</span>
+                                </div>
+                                <div className={`text-xs whitespace-pre-wrap break-words max-h-24 overflow-hidden ${
+                                  isDark ? 'text-zinc-400' : 'text-zinc-600'
+                                }`}>
+                                  {msg.contextText.length > 300
+                                    ? msg.contextText.slice(0, 300) + '…'
+                                    : msg.contextText}
+                                </div>
+                              </button>
+                            )}
+                            <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+                          </div>
+                        )
                       ) : (
                         <div
                           className={`prose prose-zinc ${
@@ -585,16 +761,44 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                         >
                           <MarkdownMessage content={msg.content} isDark={isDark} />
 
-                          {isStreaming && isLastAssistant && (
-                            msg.content.trim().length === 0
-                              ? renderTypingSpinner(getSpinnerVariant(msg.id))
-                              : renderStreamingCursor(getCursorVariant(msg.id))
+                          {isStreaming && isLastAssistant && msg.content.trim().length === 0 && (
+                            regenState ? (
+                              <>
+                                {regenState.variant === 'A' && (
+                                  <div className="opacity-60">
+                                    <MarkdownMessage content={regenState.oldContent} isDark={isDark} />
+                                  </div>
+                                )}
+                                {regenState.variant === 'B' && (
+                                  <div className="flex items-center gap-2 text-zinc-400">
+                                    {renderTypingSpinner(getSpinnerVariant(msg.id))}
+                                    <span className="text-xs">Regenerating…</span>
+                                  </div>
+                                )}
+                                {regenState.variant === 'C' && (
+                                  <div>
+                                    <div className="opacity-30">
+                                      <MarkdownMessage content={regenState.oldContent} isDark={isDark} />
+                                    </div>
+                                    <div className="flex items-center gap-2 text-zinc-400 mt-1">
+                                      {renderTypingSpinner(getSpinnerVariant(msg.id))}
+                                      <span className="text-xs">Regenerating…</span>
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              renderTypingSpinner(getSpinnerVariant(msg.id))
+                            )
+                          )}
+
+                          {isStreaming && isLastAssistant && msg.content.trim().length > 0 && (
+                            renderStreamingCursor(getCursorVariant(msg.id))
                           )}
                         </div>
                       )}
                     </div>
 
-                    {/* Timestamp — revealed on hover (desktop) or focus (touch) */}
                     <div
                       className={`text-[10px] text-zinc-500 mt-1 opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition-opacity select-none ${
                         isUser ? 'text-right' : 'text-left ml-1'
@@ -603,10 +807,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                       {formatShortTime(msg.timestamp)}
                     </div>
 
-                    {/* Assistant action buttons — icon only (no labels) */}
                     {!isUser && !isStreaming && (
                       <div className="flex items-center gap-1 mt-1 ml-1 text-zinc-400">
-                        {/* Copy icon */}
                         <button
                           type="button"
                           onClick={() => handleCopy(msg.id, msg.content)}
@@ -622,11 +824,10 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                           )}
                         </button>
 
-                        {/* Regenerate icon (last assistant message only) */}
                         {isLastAssistant && (
                           <button
                             type="button"
-                            onClick={onRegenerate}
+                            onClick={handleRegenerateClick}
                             title="Regenerate"
                             className={`p-1.5 rounded-lg transition-colors ${
                               isDark ? 'hover:bg-zinc-800 hover:text-zinc-200' : 'hover:bg-zinc-200 hover:text-zinc-800'
@@ -637,9 +838,37 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                         )}
                       </div>
                     )}
+
+                    {isUser && !isEditingThis && !isStreaming && (
+                      <div className="flex items-center justify-end gap-1 mt-1 mr-1 text-zinc-400 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                        <button
+                          type="button"
+                          onClick={() => handleStartEdit(msg)}
+                          title="Edit message"
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            isDark ? 'hover:bg-zinc-800 hover:text-zinc-200' : 'hover:bg-zinc-200 hover:text-zinc-800'
+                          }`}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(msg.id, msg.content)}
+                          title="Copy"
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            isDark ? 'hover:bg-zinc-800 hover:text-zinc-200' : 'hover:bg-zinc-200 hover:text-zinc-800'
+                          }`}
+                        >
+                          {copiedMessageId === msg.id ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    )}
                   </div>
 
-                  {/* User avatar */}
                   {isUser && (
                     <div className="shrink-0 pt-0.5">
                       <div className="w-7 h-7 rounded-full bg-zinc-700 text-zinc-200 flex items-center justify-center font-medium text-xs">
@@ -653,6 +882,21 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             <div ref={messagesEndRef} />
           </div>
         </div>
+      )}
+
+      {/* Floating "Ask about this" button */}
+      {askAboutButton && (
+        <button
+          data-ask-about-btn
+          type="button"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={handleAskAboutClick}
+          style={{ left: askAboutButton.x, top: askAboutButton.y }}
+          className="fixed z-[60] flex items-center gap-1.5 bg-zinc-900 text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg shadow-2xl border border-zinc-700 hover:bg-zinc-800 active:scale-95 transition-all"
+        >
+          <MessageCircleQuestion className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Ask about this</span>
+        </button>
       )}
     </div>
   );

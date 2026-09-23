@@ -1,14 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowUp, Square, Smile } from 'lucide-react';
+import { ArrowUp, Square, Smile, Quote, X } from 'lucide-react';
 import { EmojiPicker } from './EmojiPicker';
 
 interface ChatInputProps {
-  onSendMessage: (content: string) => void;
+  onSendMessage: (
+    content: string,
+    options?: { contextText?: string; contextMessageId?: string }
+  ) => void;
   isStreaming: boolean;
   onStopStreaming: () => void;
   isDark: boolean;
   isCentered?: boolean;
   disableAutoType?: boolean;
+  contextText?: string;
+  contextMessageId?: string;
+  onClearContext?: () => void;
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
@@ -18,6 +24,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   isDark,
   isCentered = false,
   disableAutoType = false,
+  contextText,
+  contextMessageId,
+  onClearContext,
 }) => {
   const [text, setText] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -39,12 +48,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     const onKeyDown = (e: KeyboardEvent) => {
       if (isEditable(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
-      // Sirf printable characters (a, 1, ?, Hindi letters, space...) par focus karo
       if (e.key.length !== 1) return;
       const ta = textareaRef.current;
       if (!ta) return;
       ta.focus();
-      // Space dabane par page scroll na ho
       if (e.key === ' ') e.preventDefault(), setText((prev) => prev + ' ');
     };
 
@@ -65,6 +72,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     };
   }, [disableAutoType]);
 
+  // Auto-focus textarea when a context is added so the user can type immediately
+  useEffect(() => {
+    if (contextText) textareaRef.current?.focus();
+  }, [contextText]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setText(e.target.value);
     if (textareaRef.current) {
@@ -83,7 +95,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       textareaRef.current.style.height = 'auto';
     }
     setShowEmojiPicker(false);
-    onSendMessage(message);
+    onSendMessage(message, contextText ? { contextText, contextMessageId } : undefined);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -120,7 +132,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           : 'max-w-3xl mx-auto px-3 sm:px-6 pb-2 pt-1'
       }`}
     >
-      {/* Emoji Picker Popup */}
       {showEmojiPicker && (
         <EmojiPicker
           onSelectEmoji={handleEmojiSelect}
@@ -129,7 +140,46 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         />
       )}
 
-      {/* ChatGPT-style clean Input Box */}
+      {/* Context chip — shows the selected text the user is asking about */}
+      {contextText && (
+        <div
+          className={`mb-2 flex items-start gap-2 rounded-xl border-l-2 border-cyan-400/80 px-3 py-2 ${
+            isDark ? 'bg-zinc-800/70' : 'bg-zinc-100'
+          }`}
+        >
+          <Quote className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`} />
+          <div className="flex-1 min-w-0">
+            <div className={`text-[10px] font-semibold mb-0.5 ${isDark ? 'text-cyan-300' : 'text-cyan-700'}`}>
+              Asking about selected text
+            </div>
+            <div
+              className={`text-xs break-words ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}
+              style={{
+                display: '-webkit-box',
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              {contextText}
+            </div>
+          </div>
+          {onClearContext && (
+            <button
+              type="button"
+              onClick={onClearContext}
+              title="Clear"
+              className={`shrink-0 p-1 rounded-lg transition-colors ${
+                isDark ? 'hover:bg-zinc-700 text-zinc-400' : 'hover:bg-zinc-200 text-zinc-500'
+              }`}
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+
       <div
         className={`relative flex items-end gap-2 rounded-2xl border p-2 sm:p-2.5 transition-all shadow-sm ${
           isDark
@@ -137,7 +187,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             : 'bg-white border-zinc-300 focus-within:border-zinc-500 text-zinc-900 shadow-sm'
         } ${isCentered ? 'shadow-md py-3 px-3.5 sm:px-4 rounded-3xl' : ''}`}
       >
-        {/* Emoji Trigger Button */}
         <button
           id="toggle-emoji-btn"
           type="button"
@@ -156,7 +205,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           <Smile className="w-5 h-5" />
         </button>
 
-        {/* Text Input Area with requested placeholder: "ask here..." */}
         <textarea
           id="chat-message-input"
           ref={textareaRef}
@@ -164,7 +212,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           value={text}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
-          placeholder="Ask here..."
+          placeholder={contextText ? 'Ask something about the selected text…' : 'Ask here...'}
           className={`flex-1 max-h-44 resize-none bg-transparent py-1.5 px-1 text-sm sm:text-base focus:outline-none leading-relaxed ${
             isDark
               ? 'text-zinc-100 placeholder-zinc-400'
@@ -172,7 +220,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           }`}
         />
 
-        {/* Action Button: Send Arrow or Stop Generating (ChatGPT style) */}
         {isStreaming ? (
           <button
             id="stop-streaming-btn"
@@ -205,7 +252,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         )}
       </div>
 
-      {/* Disclaimer: "tejas is ai can make mistakes please double chek response" */}
       <div className="text-center mt-2 px-2">
         <p className={`text-[11px] select-none ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
           tejas is ai can make mistakes please double chek response

@@ -6,6 +6,9 @@ export interface Message {
   content: string;
   timestamp: number;
   status?: 'streaming' | 'complete' | 'error';
+  // "Ask about this" — reference to a snippet the user selected from an earlier message
+  contextText?: string;
+  contextMessageId?: string;
 }
 
 export interface ChatSession {

@@ -21,7 +21,7 @@ import go from 'react-syntax-highlighter/dist/esm/languages/prism/go';
 import rust from 'react-syntax-highlighter/dist/esm/languages/prism/rust';
 import yaml from 'react-syntax-highlighter/dist/esm/languages/prism/yaml';
 import php from 'react-syntax-highlighter/dist/esm/languages/prism/php';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, Download } from 'lucide-react';
 import { copyText } from '../utils/clipboard';
 
 // Kuch bundlers default export ko { default: fn } bana dete hain, isliye dono case handle
@@ -41,6 +41,44 @@ const ALIASES: Record<string, string> = {
 };
 const normalizeLang = (raw: string): string => ALIASES[raw.toLowerCase()] || raw.toLowerCase();
 
+// Language → file extension (for downloads)
+const LANG_EXT: Record<string, string> = {
+  javascript: 'js',
+  typescript: 'ts',
+  jsx: 'jsx',
+  tsx: 'tsx',
+  python: 'py',
+  bash: 'sh',
+  shell: 'sh',
+  zsh: 'sh',
+  json: 'json',
+  jsonc: 'json',
+  css: 'css',
+  scss: 'scss',
+  sass: 'sass',
+  less: 'less',
+  markup: 'html',
+  html: 'html',
+  xml: 'xml',
+  svg: 'svg',
+  java: 'java',
+  c: 'c',
+  cpp: 'cpp',
+  csharp: 'cs',
+  sql: 'sql',
+  go: 'go',
+  rust: 'rs',
+  yaml: 'yml',
+  yml: 'yml',
+  php: 'php',
+  markdown: 'md',
+  md: 'md',
+  text: 'txt',
+  plaintext: 'txt',
+  txt: 'txt',
+};
+const getExtension = (lang: string): string => LANG_EXT[lang] || 'txt';
+
 const LANG_BADGE: Record<string, string> = {
   javascript: '🟨', typescript: '🟦', jsx: '⚛️', tsx: '⚛️', python: '🐍', bash: '💻', json: '🧾', css: '🎨',
   markup: '🌐', java: '☕', c: '⚙️', cpp: '⚙️', csharp: '🔷', sql: '🗄️', go: '🐹', rust: '🦀', yaml: '📄', php: '🐘',
@@ -57,6 +95,20 @@ const CodeBlock: React.FC<{ code: string; language: string }> = ({ code, languag
     }
   };
 
+  const handleDownload = () => {
+    const ext = getExtension(lang);
+    const filename = `tejas-snippet-${Date.now()}.${ext}`;
+    const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="not-prose my-4 overflow-hidden rounded-xl border border-zinc-700/60 shadow-md">
       <div className="flex items-center justify-between gap-2 px-3 py-2 bg-gradient-to-r from-fuchsia-600/25 via-indigo-600/25 to-cyan-600/25 border-b border-zinc-700/60">
@@ -70,25 +122,35 @@ const CodeBlock: React.FC<{ code: string; language: string }> = ({ code, languag
             {LANG_BADGE[lang] || '📝'} {language || 'code'}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={handleCopy}
-          title="Copy code"
-          className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
-            copied ? 'text-emerald-300 bg-emerald-500/15' : 'text-zinc-200 hover:text-white bg-white/5 hover:bg-white/10'
-          }`}
-        >
-          {copied ? (
-            <>
-              <Check className="w-3.5 h-3.5" /> Copied ✓
-            </>
-          ) : (
-            <>
-              <Copy className="w-3.5 h-3.5" /> Copy
-            </>
-          )}
-        </button>
+
+        {/* Icon-only action buttons */}
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={handleCopy}
+            title={copied ? 'Copied' : 'Copy code'}
+            aria-label="Copy code"
+            className={`p-1.5 rounded-lg transition-all ${
+              copied
+                ? 'text-emerald-300 bg-emerald-500/15'
+                : 'text-zinc-200 hover:text-white bg-white/5 hover:bg-white/10'
+            }`}
+          >
+            {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleDownload}
+            title="Download file"
+            aria-label="Download code"
+            className="p-1.5 rounded-lg text-zinc-200 hover:text-white bg-white/5 hover:bg-white/10 transition-all"
+          >
+            <Download className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
+
       <div className="overflow-x-auto bg-[#282c34]">
         <SyntaxHighlighter
           language={lang}

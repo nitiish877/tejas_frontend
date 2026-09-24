@@ -14,6 +14,7 @@ import {
   Crown,
   TestTube2,
   LogIn,
+  Download,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -34,6 +35,50 @@ interface SidebarProps {
   onOpenSubscription?: (plan?: SubscriptionPlanType) => void;
   subscriptionPlan?: SubscriptionPlanType;
   isDark: boolean;
+  appDownloadUrl?: string;
+}
+
+// Detect if the current runtime is an INSTALLED app (APK / TWA / PWA standalone / WebView).
+// If yes → hide the "Download App" button. Web browsers always show it.
+function isRunningAsInstalledApp(): boolean {
+  try {
+    // 1) PWA standalone mode (Android Chrome PWA, iOS Safari PWA)
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      if (
+        window.matchMedia('(display-mode: standalone)').matches ||
+        window.matchMedia('(display-mode: fullscreen)').matches ||
+        window.matchMedia('(display-mode: minimal-ui)').matches
+      ) {
+        return true;
+      }
+    }
+
+    // 2) iOS Safari PWA
+    if ((window.navigator as any).standalone === true) {
+      return true;
+    }
+
+    // 3) Android TWA (Trusted Web Activity) — installed app wrapper
+    if (typeof document !== 'undefined' && document.referrer) {
+      if (document.referrer.startsWith('android-app://')) return true;
+    }
+
+    // 4) Android WebView (APK using WebView) — custom user agent flag
+    const ua = (navigator.userAgent || '').toLowerCase();
+    if (ua.includes('tejasapp')) return true; // set this in APK's WebView UA
+    if (ua.includes('; wv)')) return true; // default Android WebView marker
+    if (ua.includes('webview')) return true;
+
+    // 5) Android bridge object injected by the APK (if you use one)
+    if ((window as any).Android || (window as any).TejasAndroid) return true;
+
+    // 6) Capacitor / Cordova / React Native WebView
+    if ((window as any).Capacitor || (window as any).cordova) return true;
+
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -54,8 +99,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenSubscription,
   subscriptionPlan = 'free',
   isDark,
+  appDownloadUrl,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Whether we're running inside an installed app (APK / PWA / WebView).
+  // Computed once on mount — display mode doesn't change at runtime.
+  const [isInstalledApp] = useState<boolean>(() => isRunningAsInstalledApp());
+
+  const handleDownloadApp = () => {
+    if (!appDownloadUrl) return;
+    try {
+      const a = document.createElement('a');
+      a.href = appDownloadUrl;
+      a.download = 'Tejas.apk';
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Download failed:', err);
+    }
+  };
 
   const filteredChats = chats.filter((c) =>
     c.title.toLowerCase().includes(searchQuery.toLowerCase())
@@ -63,6 +128,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const pinnedChats = filteredChats.filter((c) => c.isPinned);
   const recentChats = filteredChats.filter((c) => !c.isPinned);
+
+  // Always show on web browsers. Never show inside an installed app.
+  const showDownloadButton = Boolean(appDownloadUrl) && !isInstalledApp;
 
   return (
     <>
@@ -85,7 +153,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             : 'bg-[#f9f9f9] border-zinc-200 text-zinc-800'
         }`}
       >
-        {/* Top Header: Logo + Tejas (strictly Tejas only, no AI, no 1B Instruct) */}
+        {/* Top Header */}
         <div className={`p-4 flex items-center justify-between border-b ${isDark ? 'border-zinc-800' : 'border-zinc-200'}`}>
           <div className="flex items-center gap-3">
             <Logo size="sm" glowing={false} />
@@ -108,7 +176,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Action Buttons: New Chat & Temp Chat */}
         <div className="p-3 space-y-2">
-          {/* New Chat Button - clean ChatGPT style */}
           <button
             id="new-chat-btn"
             type="button"
@@ -131,7 +198,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </span>
           </button>
 
-          {/* Temp Chat Button (Incognito/Ephemeral) */}
           <button
             id="temp-chat-btn"
             type="button"
@@ -153,7 +219,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span>{isTempChatActive ? 'Temporary chat active' : 'Temporary chat'}</span>
           </button>
 
-          {/* Search chats */}
           <div className="relative pt-1">
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
             <input
@@ -173,7 +238,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Chat History List */}
         <div className="flex-1 overflow-y-auto px-2 py-1 space-y-3">
-          {/* Pinned Chats Section */}
           {pinnedChats.length > 0 && (
             <div className="space-y-1">
               <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
@@ -224,7 +288,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           )}
 
-          {/* Recent Chats Section */}
           <div className="space-y-1">
             <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
               Chats
@@ -281,7 +344,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-                {/* Subscription / Plan quick access in sidebar */}
+        {/* Download App Button — hidden after the first download */}
+        {showDownloadButton && (
+          <div className="px-3 pb-2">
+            <button
+              id="sidebar-download-app-btn"
+              type="button"
+              onClick={handleDownloadApp}
+              className={`w-full py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-between border transition-all ${
+                isDark
+                  ? 'bg-gradient-to-r from-emerald-900/40 to-teal-900/40 hover:from-emerald-900/60 hover:to-teal-900/60 border-emerald-800/40 text-emerald-200'
+                  : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-900'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Download className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Download App</span>
+              </div>
+              <span className="text-[10px] uppercase font-bold tracking-wider opacity-80">
+                .apk
+              </span>
+            </button>
+          </div>
+        )}
+
+        {/* Subscription / Plan quick access */}
         {onOpenSubscription && (
           <div className="px-3 pb-2">
             <button
@@ -348,7 +435,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Sidebar Bottom: User Account & Settings */}
         <div className={`p-2.5 border-t ${isDark ? 'border-zinc-800 bg-zinc-900/50' : 'border-zinc-200 bg-zinc-50'}`}>
           <div className="flex items-center justify-between gap-1.5">
-            {/* User Account Button - opens User Profile to change name */}
             <button
               id="user-account-btn"
               type="button"
@@ -369,7 +455,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </button>
 
-            {/* Quick Action: Settings Modal */}
             <button
               id="sidebar-settings-btn"
               type="button"

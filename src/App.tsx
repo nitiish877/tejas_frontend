@@ -422,6 +422,16 @@ export default function App() {
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<AppVersionInfo | null>(null);
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+  // "Remind me later" hides the update popup for the current browser session only.
+  // Opening a new tab / reopening the app starts a fresh session → popup shows again.
+  const UPDATE_SNOOZE_KEY = 'tejas_update_snoozed_v1';
+  const [updateSnoozed, setUpdateSnoozed] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem(UPDATE_SNOOZE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
 
   // Version check (runs automatically on boot, or manually from Settings)
   const checkForUpdates = async (manual = false) => {
@@ -434,7 +444,11 @@ export default function App() {
           setUpdateInfo(data);
           const currentVer = getClientVersion();
           if (data.version !== currentVer) {
-            if (manual || !isVersionDismissed(data.version)) {
+            if (manual) {
+              // Manual check always shows the modal
+              setUpdateModalOpen(true);
+            } else if (!isVersionDismissed(data.version) && Date.now() >= updateSnoozeUntil) {
+              // Auto check: only show if not permanently dismissed and not snoozed
               setUpdateModalOpen(true);
             }
           } else if (manual) {
@@ -454,13 +468,20 @@ export default function App() {
     }
   };
 
-  // Auto-check for updates shortly after the app boots
+  // Auto-check for updates: once shortly after boot, then every 5 minutes.
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const bootTimer = setTimeout(() => {
       checkForUpdates(false);
     }, 2000);
-    return () => clearTimeout(timer);
-  }, [settings.customBackendUrl]);
+    const interval = setInterval(() => {
+      checkForUpdates(false);
+    }, 5 * 60 * 1000);
+    return () => {
+      clearTimeout(bootTimer);
+      clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.customBackendUrl, updateSnoozed]);
 
   // Fetch server status on mount and when the backend URL changes, with cold-start detection
   useEffect(() => {
@@ -1201,6 +1222,13 @@ export default function App() {
         onOpenSubscription={() => handleOpenSubscription()}
         subscriptionPlan={settings.subscriptionPlan || 'free'}
         isDark={isDark}
+        appDownloadUrl={
+          updateInfo?.apkDownloadUrl
+            ? updateInfo.apkDownloadUrl.startsWith('http')
+              ? updateInfo.apkDownloadUrl
+              : getApiUrl(updateInfo.apkDownloadUrl)
+            : undefined
+        }
       />
 
       {/* Main Content Area (offset by sidebar on desktop) */}
@@ -1303,6 +1331,19 @@ export default function App() {
       <UpdateModal
         isOpen={updateModalOpen}
         onClose={() => setUpdateModalOpen(false)}
+        onRemindLater={() => {
+          // Snooze for the rest of this browser session.
+          // Reopening the app (new tab) or refreshing after closing starts a fresh session.
+          try {
+            sessionStorage.setItem(UPDATE_SNOOZE_KEY, '1');
+          } catch {}
+          setUpdateSnoozed(true);
+          setUpdateModalOpen(false);
+        }}
+        onOpenSettings={() => {
+          setUpdateModalOpen(false);
+          setSettingsOpen(true);
+        }}
         updateInfo={updateInfo}
         isDark={isDark}
       />

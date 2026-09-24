@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, Download, RefreshCw, X, ArrowRight, Smartphone } from 'lucide-react';
+import { Sparkles, Download, RefreshCw, X, ArrowRight, Smartphone, Clock, Settings } from 'lucide-react';
 import { AppVersionInfo, getClientVersion, setAppliedVersion, dismissVersion } from '../version';
 
 interface UpdateModalProps {
@@ -7,6 +7,8 @@ interface UpdateModalProps {
   onClose: () => void;
   updateInfo: AppVersionInfo | null;
   isDark: boolean;
+  onRemindLater?: () => void;
+  onOpenSettings?: () => void;
 }
 
 export const UpdateModal: React.FC<UpdateModalProps> = ({
@@ -14,6 +16,8 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
   onClose,
   updateInfo,
   isDark,
+  onRemindLater,
+  onOpenSettings,
 }) => {
   if (!isOpen || !updateInfo) return null;
 
@@ -42,6 +46,15 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
     onClose();
   };
 
+  const handleRemindLater = () => {
+    if (onRemindLater) {
+      onRemindLater();
+    } else {
+      // Fallback: just close the modal without dismissing
+      onClose();
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto p-4 bg-black/70 backdrop-blur-sm flex justify-center items-center animate-in fade-in duration-200">
       <div
@@ -56,12 +69,12 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
 
         {/* Close button */}
         <button
-          id="close-update-modal-btn"
           type="button"
-          onClick={handleDismiss}
+          onClick={handleRemindLater}
           className={`absolute top-4 right-4 p-2 rounded-xl transition-colors ${
             isDark ? 'hover:bg-zinc-800 text-zinc-400' : 'hover:bg-zinc-100 text-zinc-500'
           }`}
+          title="Close"
         >
           <X className="w-5 h-5" />
         </button>
@@ -107,21 +120,33 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
 
         {/* Action Buttons */}
         <div className="space-y-2.5">
-          {/* Instant Reload Update (Primary) */}
+          {/* Update Now (Primary) */}
           <button
-            id="instant-update-reload-btn"
             type="button"
             onClick={handleInstantUpdate}
             className="w-full py-3 px-4 rounded-xl font-semibold text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition-all cursor-pointer"
           >
             <RefreshCw className="w-4 h-4" />
-            <span>Update Now (Instant Reload)</span>
+            <span>Update Now</span>
           </button>
 
-          {/* Download APK option (if available) */}
+          {/* Remind Me Later (Secondary) */}
+          <button
+            type="button"
+            onClick={handleRemindLater}
+            className={`w-full py-2.5 px-4 rounded-xl font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all border ${
+              isDark
+                ? 'border-zinc-800 hover:bg-zinc-800/80 text-zinc-200'
+                : 'border-zinc-200 hover:bg-zinc-100 text-zinc-800'
+            }`}
+          >
+            <Clock className="w-4 h-4" />
+            <span>Remind Me Later</span>
+          </button>
+
+          {/* APK download option (if available) */}
           {updateInfo.apkDownloadUrl && (
             <a
-              id="download-updated-apk-btn"
               href={updateInfo.apkDownloadUrl}
               download="Tejas.apk"
               className={`w-full py-2.5 px-4 rounded-xl font-medium text-xs border flex items-center justify-center gap-2 transition-all ${
@@ -136,15 +161,19 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
             </a>
           )}
 
-          <button
-            type="button"
-            onClick={handleDismiss}
-            className={`w-full py-2 text-xs font-medium transition-colors ${
-              isDark ? 'text-zinc-500 hover:text-zinc-300' : 'text-zinc-400 hover:text-zinc-600'
-            }`}
-          >
-            Dismiss
-          </button>
+          {/* Hint: manual update */}
+          {onOpenSettings && (
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className={`w-full flex items-center justify-center gap-1.5 text-[11px] pt-1 transition-colors ${
+                isDark ? 'text-zinc-500 hover:text-zinc-300' : 'text-zinc-400 hover:text-zinc-600'
+              }`}
+            >
+              <Settings className="w-3 h-3" />
+              <span>You can also update manually from Settings → App Version</span>
+            </button>
+          )}
         </div>
       </div>
     </div>

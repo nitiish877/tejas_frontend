@@ -13,6 +13,7 @@ import { UpdateModal } from './components/UpdateModal';
 import { SharedChatView } from './components/SharedChatView';
 import { PaymentHistoryModal } from './components/PaymentHistoryModal';
 import { SharedChatsModal } from './components/SharedChatsModal';
+import { SplashScreen } from './components/SplashScreen';
 import { getClientVersion, isVersionDismissed, AppVersionInfo } from './version';
 import { playNotificationChime } from './utils/audio';
 import {
@@ -167,6 +168,9 @@ export default function App() {
 
   const [paymentHistoryOpen, setPaymentHistoryOpen] = useState(false);
   const [sharedChatsOpen, setSharedChatsOpen] = useState(false);
+
+  // Show splash screen once when the app starts
+  const [showSplash, setShowSplash] = useState(true);  
 
   // "Ask about this" — selected text from an earlier assistant message
   const [askAbout, setAskAbout] = useState<{ text: string; messageId: string } | null>(null);
@@ -1172,6 +1176,11 @@ export default function App() {
 
   if (sharedChatId) {
     return <SharedChatView shareId={sharedChatId} getApiUrl={getApiUrl} isDark={isDark} />;
+  }
+
+  // Show splash screen briefly on first open
+  if (showSplash) {
+    return <SplashScreen isDark={isDark} onFinish={() => setShowSplash(false)} />;
   }
 
   return (

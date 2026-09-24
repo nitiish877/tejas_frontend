@@ -447,7 +447,7 @@ export default function App() {
             if (manual) {
               // Manual check always shows the modal
               setUpdateModalOpen(true);
-            } else if (!isVersionDismissed(data.version) && Date.now() >= updateSnoozeUntil) {
+            } else if (!isVersionDismissed(data.version) && !updateSnoozed) {
               // Auto check: only show if not permanently dismissed and not snoozed
               setUpdateModalOpen(true);
             }

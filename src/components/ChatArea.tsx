@@ -437,13 +437,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               onClick={() => setModelDropdownOpen((prev) => !prev)}
               title="Click to switch active model"
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
-                modelInfo.plan === 'arka'
-                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20'
-                  : modelInfo.plan === 'chetak'
-                  ? 'bg-blue-500/10 border-blue-500/30 text-blue-400 hover:bg-blue-500/20'
-                  : modelInfo.plan === 'cat'
-                  ? 'bg-purple-500/10 border-purple-500/30 text-purple-300 hover:bg-purple-500/20'
-                  : isDark
+                isDark
                   ? 'bg-zinc-800/80 hover:bg-zinc-700 border-zinc-700/80 text-zinc-300'
                   : 'bg-zinc-100 hover:bg-zinc-200 border-zinc-200 text-zinc-700'
               }`}

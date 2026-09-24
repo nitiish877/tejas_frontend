@@ -353,12 +353,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onClick={handleDownloadApp}
               className={`w-full py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-between border transition-all ${
                 isDark
-                  ? 'bg-gradient-to-r from-emerald-900/40 to-teal-900/40 hover:from-emerald-900/60 hover:to-teal-900/60 border-emerald-800/40 text-emerald-200'
-                  : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-900'
+                  ? 'bg-zinc-800/60 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
+                  : 'bg-white hover:bg-zinc-100 border-zinc-200 text-zinc-700'
               }`}
             >
               <div className="flex items-center gap-2">
-                <Download className="w-3.5 h-3.5 text-emerald-400" />
+                <Download className="w-3.5 h-3.5" />
                 <span>Download App</span>
               </div>
               <span className="text-[10px] uppercase font-bold tracking-wider opacity-80">
@@ -376,26 +376,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
               type="button"
               onClick={() => onOpenSubscription()}
               className={`w-full py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-between border transition-all ${
-                subscriptionPlan === 'arka'
-                  ? 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30 text-amber-300'
-                  : subscriptionPlan === 'chetak'
-                  ? 'bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/30 text-blue-300'
-                  : subscriptionPlan === 'cat'
-                  ? 'bg-purple-500/10 hover:bg-purple-500/20 border-purple-500/30 text-purple-300'
-                  : isDark
-                  ? 'bg-gradient-to-r from-blue-900/40 to-indigo-900/40 hover:from-blue-900/60 hover:to-indigo-900/60 border-blue-800/40 text-blue-200'
-                  : 'bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-900'
+                isDark
+                  ? 'bg-zinc-800/60 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
+                  : 'bg-white hover:bg-zinc-100 border-zinc-200 text-zinc-700'
               }`}
             >
               <div className="flex items-center gap-2">
                 {subscriptionPlan === 'arka' ? (
-                  <Crown className="w-3.5 h-3.5 text-amber-400" />
+                  <Crown className="w-3.5 h-3.5" />
                 ) : subscriptionPlan === 'chetak' ? (
-                  <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                  <Sparkles className="w-3.5 h-3.5" />
                 ) : subscriptionPlan === 'cat' ? (
-                  <TestTube2 className="w-3.5 h-3.5 text-purple-400" />
+                  <TestTube2 className="w-3.5 h-3.5" />
                 ) : (
-                  <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                  <Sparkles className="w-3.5 h-3.5" />
                 )}
                 <span>
                   {subscriptionPlan === 'arka'

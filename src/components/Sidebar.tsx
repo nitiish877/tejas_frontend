@@ -101,11 +101,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const pinnedChats = filteredChats.filter((c) => c.isPinned);
   const recentChats = filteredChats.filter((c) => !c.isPinned);
 
-  // Download App button is temporarily disabled until the APK file is hosted on the backend.
-  // When the APK is ready, flip this flag to true and it will reappear automatically
-  // (only on web browsers, never inside the installed app).
-  const APK_AVAILABLE = false;
-  const showDownloadButton = APK_AVAILABLE && Boolean(appDownloadUrl) && !isInstalledApp;
+  // Show the Download App button on web browsers only, never inside the installed app.
+  const showDownloadButton = Boolean(appDownloadUrl) && !isInstalledApp;
 
   const handleDownloadApp = () => {
     if (!appDownloadUrl) return;
@@ -340,16 +337,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               id="sidebar-download-app-btn"
               type="button"
               onClick={handleDownloadApp}
-              className={`w-full py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-between border transition-all ${
+              className={`w-full py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 border transition-all ${
                 isDark
                   ? 'bg-zinc-800/60 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
                   : 'bg-white hover:bg-zinc-100 border-zinc-200 text-zinc-700'
               }`}
             >
-              <div className="flex items-center gap-2">
-                <Download className="w-3.5 h-3.5" />
-                <span>Download App</span>
-              </div>
+              <Download className="w-3.5 h-3.5" />
+              <span>Download App</span>
             </button>
           </div>
         )}

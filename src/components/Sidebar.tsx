@@ -42,6 +42,7 @@ interface SidebarProps {
 // If yes → hide the "Download App" button. Web browsers always show it.
 function isRunningAsInstalledApp(): boolean {
   try {
+    // 1) PWA standalone mode
     if (typeof window !== 'undefined' && window.matchMedia) {
       if (
         window.matchMedia('(display-mode: standalone)').matches ||
@@ -51,18 +52,49 @@ function isRunningAsInstalledApp(): boolean {
         return true;
       }
     }
+
+    // 2) iOS PWA
     if ((window.navigator as any).standalone === true) {
       return true;
     }
+
+    // 3) Android TWA
     if (typeof document !== 'undefined' && document.referrer) {
       if (document.referrer.startsWith('android-app://')) return true;
     }
+
+    // 4) URL query param — most reliable for custom APK wrappers
+    //    If the APK loads `https://your-app.vercel.app/?app=1`, we detect it here.
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('app') === '1') return true;
+    } catch {}
+
+    // 5) Android WebView — many markers
     const ua = (navigator.userAgent || '').toLowerCase();
+    const uaOriginal = navigator.userAgent || '';
+
     if (ua.includes('tejasapp')) return true;
     if (ua.includes('; wv)')) return true;
     if (ua.includes('webview')) return true;
+    if (ua.includes('wv)')) return true;
+    if (/version\/\d+\.\d+.*mobile safari/i.test(uaOriginal) && ua.includes('android')) {
+      return true;
+    }
+    if (ua.includes('android') && ua.includes('safari') && !ua.includes('chrome')) {
+      return true;
+    }
+    if (ua.includes('; wv;') || ua.includes(' wv ')) return true;
+    if (ua.includes('okhttp')) return true;
+    if (ua.includes('cfnetwork') && ua.includes('darwin') && !ua.includes('safari')) {
+      return true;
+    }
+
+    // 6) Native bridge objects (Capacitor / Cordova / custom APK)
     if ((window as any).Android || (window as any).TejasAndroid) return true;
     if ((window as any).Capacitor || (window as any).cordova) return true;
+    if ((window as any).ReactNativeWebView) return true;
+
     return false;
   } catch {
     return false;
@@ -92,6 +124,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
 
   // Whether we're running inside an installed app (APK / PWA / WebView).
+  // Computed once on mount — display mode doesn't change at runtime.
   const [isInstalledApp] = useState<boolean>(() => isRunningAsInstalledApp());
 
   const filteredChats = chats.filter((c) =>
@@ -107,15 +140,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const handleDownloadApp = () => {
     if (!appDownloadUrl) return;
     try {
+      // Standard download via anchor — works in Chrome, Firefox, Edge, most Android browsers.
       const a = document.createElement('a');
       a.href = appDownloadUrl;
       a.download = 'Tejas.apk';
       a.rel = 'noopener';
+      a.style.display = 'none';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
     } catch (err) {
-      console.error('Download failed:', err);
+      console.error('Download failed, opening in new tab:', err);
+      try {
+        window.open(appDownloadUrl, '_blank', 'noopener,noreferrer');
+      } catch {}
     }
   };
 
@@ -129,6 +167,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         />
       )}
 
+      {/* Sidebar Container */}
       <aside
         id="app-sidebar"
         className={`fixed top-0 bottom-0 left-0 z-50 w-72 sm:w-80 flex flex-col border-r transition-transform duration-300 ease-in-out ${
@@ -330,7 +369,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        {/* Download App Button — hidden until APK is hosted on the backend */}
+        {/* Download App Button — hidden inside installed app */}
         {showDownloadButton && (
           <div className="px-3 pb-2">
             <button

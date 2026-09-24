@@ -61,6 +61,9 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 export default function App() {
+  // Show splash screen once when the app starts
+  const [showSplash, setShowSplash] = useState(true);
+
   // Persistence state loaders
   const [chats, setChats] = useState<ChatSession[]>(() => {
     try {
@@ -168,9 +171,6 @@ export default function App() {
 
   const [paymentHistoryOpen, setPaymentHistoryOpen] = useState(false);
   const [sharedChatsOpen, setSharedChatsOpen] = useState(false);
-
-  // Show splash screen once when the app starts
-  const [showSplash, setShowSplash] = useState(true);  
 
   // "Ask about this" — selected text from an earlier assistant message
   const [askAbout, setAskAbout] = useState<{ text: string; messageId: string } | null>(null);
@@ -590,7 +590,6 @@ export default function App() {
   const handleSelectChat = (id: string) => {
     setIsTempChatActive(false);
     setActiveChatId(id);
-    // Lazy load messages if this chat hasn't been opened yet this session
     loadChatMessages(id);
   };
 
@@ -652,7 +651,6 @@ export default function App() {
     if (!getAuthToken()) return true;
     for (const chat of chatsRef.current) {
       if (chat.isTemp) continue;
-      // Skip chats that only have metadata (messages not loaded yet)
       if (chat.messages.length === 0) continue;
       const sig = chatSignature(chat);
       if (syncedRef.current.get(chat.id) === sig) continue;
@@ -678,7 +676,6 @@ export default function App() {
           if (!local || sc.updatedAt >= local.updatedAt) {
             map.set(sc.id, {
               ...sc,
-              // Preserve messages if the local copy already has them
               messages: local && local.messages.length > 0 ? local.messages : sc.messages,
             });
             syncedRef.current.set(sc.id, chatSignature(sc));
@@ -697,7 +694,6 @@ export default function App() {
     if (!getAuthToken() || isGuestUser(currentUser)) return;
     const existing = chatsRef.current.find((c) => c.id === chatId);
     if (!existing) return;
-    // Skip if we already have messages for this chat
     if (existing.messages.length > 0) return;
     try {
       const { chat: fullChat } = await fetchServerChatById(getApiUrl, chatId);
@@ -1208,13 +1204,7 @@ export default function App() {
         onOpenSubscription={() => handleOpenSubscription()}
         subscriptionPlan={settings.subscriptionPlan || 'free'}
         isDark={isDark}
-        appDownloadUrl={
-          updateInfo?.apkDownloadUrl
-            ? updateInfo.apkDownloadUrl.startsWith('http')
-              ? updateInfo.apkDownloadUrl
-              : getApiUrl(updateInfo.apkDownloadUrl)
-            : undefined
-        }
+        appDownloadUrl="/Tejas.apk"
       />
 
       {/* Main Content Area */}

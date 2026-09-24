@@ -42,7 +42,6 @@ interface SidebarProps {
 // If yes → hide the "Download App" button. Web browsers always show it.
 function isRunningAsInstalledApp(): boolean {
   try {
-    // 1) PWA standalone mode (Android Chrome PWA, iOS Safari PWA)
     if (typeof window !== 'undefined' && window.matchMedia) {
       if (
         window.matchMedia('(display-mode: standalone)').matches ||
@@ -52,29 +51,18 @@ function isRunningAsInstalledApp(): boolean {
         return true;
       }
     }
-
-    // 2) iOS Safari PWA
     if ((window.navigator as any).standalone === true) {
       return true;
     }
-
-    // 3) Android TWA (Trusted Web Activity) — installed app wrapper
     if (typeof document !== 'undefined' && document.referrer) {
       if (document.referrer.startsWith('android-app://')) return true;
     }
-
-    // 4) Android WebView (APK using WebView) — custom user agent flag
     const ua = (navigator.userAgent || '').toLowerCase();
-    if (ua.includes('tejasapp')) return true; // set this in APK's WebView UA
-    if (ua.includes('; wv)')) return true; // default Android WebView marker
+    if (ua.includes('tejasapp')) return true;
+    if (ua.includes('; wv)')) return true;
     if (ua.includes('webview')) return true;
-
-    // 5) Android bridge object injected by the APK (if you use one)
     if ((window as any).Android || (window as any).TejasAndroid) return true;
-
-    // 6) Capacitor / Cordova / React Native WebView
     if ((window as any).Capacitor || (window as any).cordova) return true;
-
     return false;
   } catch {
     return false;
@@ -104,8 +92,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
 
   // Whether we're running inside an installed app (APK / PWA / WebView).
-  // Computed once on mount — display mode doesn't change at runtime.
   const [isInstalledApp] = useState<boolean>(() => isRunningAsInstalledApp());
+
+  const filteredChats = chats.filter((c) =>
+    c.title.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const pinnedChats = filteredChats.filter((c) => c.isPinned);
+  const recentChats = filteredChats.filter((c) => !c.isPinned);
+
+  // Download App button is temporarily disabled until the APK file is hosted on the backend.
+  // When the APK is ready, flip this flag to true and it will reappear automatically
+  // (only on web browsers, never inside the installed app).
+  const APK_AVAILABLE = false;
+  const showDownloadButton = APK_AVAILABLE && Boolean(appDownloadUrl) && !isInstalledApp;
 
   const handleDownloadApp = () => {
     if (!appDownloadUrl) return;
@@ -122,16 +122,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  const filteredChats = chats.filter((c) =>
-    c.title.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const pinnedChats = filteredChats.filter((c) => c.isPinned);
-  const recentChats = filteredChats.filter((c) => !c.isPinned);
-
-  // Always show on web browsers. Never show inside an installed app.
-  const showDownloadButton = Boolean(appDownloadUrl) && !isInstalledApp;
-
   return (
     <>
       {/* Backdrop for mobile */}
@@ -142,7 +132,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         />
       )}
 
-      {/* Sidebar Container */}
       <aside
         id="app-sidebar"
         className={`fixed top-0 bottom-0 left-0 z-50 w-72 sm:w-80 flex flex-col border-r transition-transform duration-300 ease-in-out ${
@@ -344,7 +333,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        {/* Download App Button — hidden after the first download */}
+        {/* Download App Button — hidden until APK is hosted on the backend */}
         {showDownloadButton && (
           <div className="px-3 pb-2">
             <button
@@ -361,9 +350,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <Download className="w-3.5 h-3.5" />
                 <span>Download App</span>
               </div>
-              <span className="text-[10px] uppercase font-bold tracking-wider opacity-80">
-                .apk
-              </span>
             </button>
           </div>
         )}

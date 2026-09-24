@@ -23,6 +23,7 @@ import {
   deleteShareLink,
   deleteServerChat,
   fetchMe,
+  fetchServerChatById,
   fetchServerChats,
   getAuthToken,
   isGuestUser,
@@ -62,9 +63,7 @@ export default function App() {
   // Persistence state loaders
   const [chats, setChats] = useState<ChatSession[]>(() => {
     try {
-      // Remove any legacy guest chats that used to be stored in localStorage
       localStorage.removeItem(STORAGE_KEY_CHATS);
-      // Guest chats live only in this tab/session — closing the tab clears them
       const saved = sessionStorage.getItem(STORAGE_KEY_CHATS);
       if (saved) return JSON.parse(saved);
     } catch (e) {
@@ -78,7 +77,6 @@ export default function App() {
       const saved = localStorage.getItem(STORAGE_KEY_USER);
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Clear any old hardcoded username
         if (
           parsed.name === 'Nitish Vishwakarma' ||
           parsed.email === 'nitishvishwakarma1332@gmail.com' ||
@@ -99,15 +97,13 @@ export default function App() {
       const saved = localStorage.getItem(STORAGE_KEY_SETTINGS);
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Automatically upgrade to the adaptive prompt if the user is still on the old generic one
         if (
           !parsed.systemPrompt ||
           parsed.systemPrompt.includes('Provide clean, well-formatted answers with markdown, clear headings, and concise explanations.')
         ) {
           parsed.systemPrompt = DEFAULT_SETTINGS.systemPrompt;
         }
-        // MIGRATION: seed ownedPlans from the old single-plan field so already-paid
-        // users don't lose their plan after this update.
+        // MIGRATION: seed ownedPlans from the old single-plan field
         if (!Array.isArray(parsed.ownedPlans)) {
           if (parsed.subscriptionPlan && parsed.subscriptionPlan !== 'free') {
             parsed.ownedPlans = [parsed.subscriptionPlan];
@@ -136,7 +132,7 @@ export default function App() {
   const [isStreaming, setIsStreaming] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // "/share/<id>" URL: anyone (logged in or guest) opening this link sees a read-only shared chat.
+  // "/share/<id>" URL
   const [sharedChatId] = useState<string | null>(() => {
     try {
       const m = window.location.pathname.match(/^\/share\/([a-zA-Z0-9]+)/);
@@ -146,7 +142,6 @@ export default function App() {
     }
   });
 
-  // Stable id that stays the same for the entire Temp Chat session (used for ephemeral sync)
   const tempChatIdRef = useRef<string>('temp_' + Date.now());
 
   // Share modal state
@@ -157,7 +152,6 @@ export default function App() {
   const [shareId, setShareId] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
-  // If a guest taps Share, remember the chat id so we can share it right after they sign in
   const pendingShareRef = useRef<string | null>(null);
 
   // Modals & drawers state
@@ -173,15 +167,16 @@ export default function App() {
 
   const [paymentHistoryOpen, setPaymentHistoryOpen] = useState(false);
   const [sharedChatsOpen, setSharedChatsOpen] = useState(false);
-    // "Ask about this" — selected text from an earlier assistant message
+
+  // "Ask about this" — selected text from an earlier assistant message
   const [askAbout, setAskAbout] = useState<{ text: string; messageId: string } | null>(null);
+
   const handleOpenSubscription = (plan: SubscriptionPlanType = 'cat') => {
     setHighlightPlan(plan);
     setSubscriptionModalOpen(true);
   };
 
   const handleInitiateCheckout = (item: PaymentItem) => {
-    // Guest payment would be lost on refresh/logout — force sign-in first.
     if (isGuestUser(currentUser)) {
       setAuthNotice(
         'Please sign in or create an account to subscribe. Guest payments are not saved, so your plan would be lost on refresh.'
@@ -194,8 +189,6 @@ export default function App() {
   };
 
   const handleSelectFreePlan = () => {
-    // Switching to Free only changes the *active* model — the paid plans stay owned
-    // until their own expiry passes (see the auto-expiry effect below).
     setSettings((prev) => ({
       ...prev,
       subscriptionPlan: 'free',
@@ -203,7 +196,7 @@ export default function App() {
     }));
   };
 
-      const handlePaymentSuccess = (
+  const handlePaymentSuccess = (
     plan: SubscriptionPlanType,
     modelId: string,
     durationDays: number,
@@ -213,7 +206,6 @@ export default function App() {
     const now = Date.now();
     const expiresAt = now + durationDays * 24 * 60 * 60 * 1000;
     setSettings((prev) => {
-      // Add the plan to the user's owned list (keeps previous plans intact)
       const owned = new Set(prev.ownedPlans || []);
       owned.add(plan);
       const next: AppSettings = {
@@ -229,7 +221,6 @@ export default function App() {
           [plan]: expiresAt,
         },
       };
-      // Persist subscription + payment record on server so both survive logout/login
       if (getAuthToken() && !isGuestUser(currentUser)) {
         saveSubscriptionToServer(getApiUrl, {
           subscriptionPlan: next.subscriptionPlan || 'free',
@@ -240,7 +231,6 @@ export default function App() {
           lastPaymentId: next.lastPaymentId,
         }).catch((e) => console.error('Subscription sync failed', e));
 
-        // Save the payment record for the history view
         const planNames: Record<SubscriptionPlanType, { name: string; modelId: string }> = {
           free: { name: 'Free Tier', modelId: 'meta-llama/Llama-3.2-1B-Instruct' },
           cat: { name: 'Tejas Cat (3B) Test Tier', modelId: 'meta-llama/Llama-3.2-3B-Instruct' },
@@ -271,8 +261,8 @@ export default function App() {
     });
     playNotificationChime();
   };
+
   // Independently expire each owned plan as its own expiry passes.
-  // If the currently selected plan expires, fall back to Free (1B).
   useEffect(() => {
     const checkSubscriptionExpiry = () => {
       setSettings((prev) => {
@@ -286,7 +276,6 @@ export default function App() {
           return !exp || exp > now;
         });
 
-        // Nothing expired → return the same object to avoid re-renders
         if (active.length === owned.length) return prev;
 
         const newExpiries: Partial<Record<SubscriptionPlanType, number>> = { ...expiries };
@@ -296,7 +285,7 @@ export default function App() {
           if (exp && exp <= now) delete newExpiries[p];
         }
 
-                const currentPlan = prev.subscriptionPlan || 'free';
+        const currentPlan = prev.subscriptionPlan || 'free';
         const stillOwned = currentPlan === 'free' || active.includes(currentPlan);
 
         const next: AppSettings = {
@@ -310,7 +299,6 @@ export default function App() {
           subscriptionExpiresAt: stillOwned ? prev.subscriptionExpiresAt : undefined,
         };
 
-        // Persist the cleanup to the server, so expired plans don't reappear on next login
         if (getAuthToken() && !isGuestUser(currentUser)) {
           saveSubscriptionToServer(getApiUrl, {
             subscriptionPlan: next.subscriptionPlan || 'free',
@@ -329,11 +317,12 @@ export default function App() {
     checkSubscriptionExpiry();
     const timer = setInterval(checkSubscriptionExpiry, 5000);
     return () => clearInterval(timer);
-  }, []); // interval reads latest state via the setState callback
+  }, []);
+
   // HF status info from backend
   const [hfStatus, setHfStatus] = useState<HFStatus | null>(null);
 
-  // Resolve the backend endpoint from env vars (e.g. VITE_BACKEND_URL on Netlify/Vercel) or a custom config
+  // Resolve the backend endpoint
   const getApiUrl = (path: string): string => {
     let base = (
       import.meta.env.VITE_BACKEND_URL ||
@@ -342,7 +331,6 @@ export default function App() {
       ''
     ).trim().replace(/\/$/, '');
 
-    // If the user provided a bare domain without protocol, prepend https://
     if (base && !base.startsWith('http://') && !base.startsWith('https://')) {
       base = `https://${base}`;
     }
@@ -350,8 +338,7 @@ export default function App() {
     return base ? `${base}${path}` : path;
   };
 
-  // Guest chats are session-scoped: they live only in sessionStorage (cleared when the tab closes,
-  // but preserved on refresh). Logged-in user chats are never stored in the browser — only in the cloud DB.
+  // Guest chats are session-scoped
   useEffect(() => {
     try {
       if (isGuestUser(currentUser)) {
@@ -365,24 +352,19 @@ export default function App() {
     }
   }, [chats, currentUser]);
 
-  // SECURITY: A guest's normal chats live only in the current tab (see the effect above).
-  // They are never stored permanently. In the background, only a 30-day safety-net copy is
-  // pushed to the server (ephemeral_chats table), which is never surfaced back to the user
-  // and auto-deletes after 30 days.
+  // Guest safety-net sync
   useEffect(() => {
     if (!isGuestUser(currentUser)) return;
     const timer = setTimeout(() => {
       chats.forEach((chat) => {
         if (chat.messages.length > 0) saveEphemeralChat(getApiUrl, chat, false);
       });
-    }, 1500); // debounce so we don't fire on every keystroke
+    }, 1500);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chats, currentUser]);
 
-  // SECURITY: Temp Chats (guest or logged-in) are never permanently stored and never migrated
-  // into the user's account. Only a 30-day safety-net copy is pushed, it is never surfaced back
-  // to the UI, and it auto-deletes after 30 days.
+  // Temp Chat safety-net sync
   useEffect(() => {
     if (!isTempChatActive || tempChatMessages.length === 0) return;
     const timer = setTimeout(() => {
@@ -422,8 +404,7 @@ export default function App() {
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<AppVersionInfo | null>(null);
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
-  // "Remind me later" hides the update popup for the current browser session only.
-  // Opening a new tab / reopening the app starts a fresh session → popup shows again.
+
   const UPDATE_SNOOZE_KEY = 'tejas_update_snoozed_v1';
   const [updateSnoozed, setUpdateSnoozed] = useState<boolean>(() => {
     try {
@@ -433,7 +414,7 @@ export default function App() {
     }
   });
 
-  // Version check (runs automatically on boot, or manually from Settings)
+  // Version check
   const checkForUpdates = async (manual = false) => {
     if (manual) setIsCheckingUpdates(true);
     try {
@@ -445,10 +426,8 @@ export default function App() {
           const currentVer = getClientVersion();
           if (data.version !== currentVer) {
             if (manual) {
-              // Manual check always shows the modal
               setUpdateModalOpen(true);
             } else if (!isVersionDismissed(data.version) && !updateSnoozed) {
-              // Auto check: only show if not permanently dismissed and not snoozed
               setUpdateModalOpen(true);
             }
           } else if (manual) {
@@ -483,7 +462,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.customBackendUrl, updateSnoozed]);
 
-  // Fetch server status on mount and when the backend URL changes, with cold-start detection
+  // Server health check
   useEffect(() => {
     let isMounted = true;
     let retryTimer: any = null;
@@ -498,7 +477,6 @@ export default function App() {
         ).trim()
       );
 
-      // If a custom backend takes longer than 2.5s, it's likely a cold start
       const slowTimer = setTimeout(() => {
         if (isMounted && hasCustomUrl) {
           setServerState('waking_up');
@@ -518,7 +496,6 @@ export default function App() {
           }
         } else {
           if (isMounted) {
-            // If the response is HTML or missing and no custom URL is set, mark offline (no fake waking banner)
             setServerState(hasCustomUrl ? 'waking_up' : 'offline');
             if (hasCustomUrl) {
               retryTimer = setTimeout(checkServerHealth, 6000);
@@ -530,7 +507,6 @@ export default function App() {
         if (isMounted) {
           setServerState(hasCustomUrl ? 'waking_up' : 'offline');
           if (hasCustomUrl) {
-            // Keep retrying until the container finishes cold-booting
             retryTimer = setTimeout(checkServerHealth, 6000);
           }
         }
@@ -555,7 +531,6 @@ export default function App() {
     return () => matchMedia.removeEventListener('change', listener);
   }, []);
 
-  // Compute effective theme (Dark vs Bright)
   const isDark =
     settings.theme === 'dark'
       ? true
@@ -611,6 +586,8 @@ export default function App() {
   const handleSelectChat = (id: string) => {
     setIsTempChatActive(false);
     setActiveChatId(id);
+    // Lazy load messages if this chat hasn't been opened yet this session
+    loadChatMessages(id);
   };
 
   const handleTogglePinChat = (id: string, e: React.MouseEvent) => {
@@ -640,7 +617,7 @@ export default function App() {
     }
   };
 
-  // ---- Server (DB) chat sync: only for logged-in users ----
+  // ---- Server (DB) chat sync ----
   const syncedRef = useRef<Map<string, string>>(new Map());
   const chatsRef = useRef<ChatSession[]>(chats);
   chatsRef.current = chats;
@@ -652,9 +629,6 @@ export default function App() {
     setActiveChatId(null);
     setIsTempChatActive(false);
     setCurrentUser(DEFAULT_USER);
-    // Reset the active model + subscription on logout so the previous account's
-    // paid model doesn't stay active for the next (guest) session.
-    // This also updates the top-right model pill and the sidebar plan badge.
     setSettings((prev) => ({
       ...prev,
       selectedModel: 'meta-llama/Llama-3.2-1B-Instruct',
@@ -670,12 +644,12 @@ export default function App() {
     sessionStorage.removeItem(STORAGE_KEY_CHATS);
   };
 
-  // Upload any chats that aren't saved to the server yet.
-  // Returns false if the session expired (so the caller can handle it).
   const syncPendingChats = async (): Promise<boolean> => {
     if (!getAuthToken()) return true;
     for (const chat of chatsRef.current) {
       if (chat.isTemp) continue;
+      // Skip chats that only have metadata (messages not loaded yet)
+      if (chat.messages.length === 0) continue;
       const sig = chatSignature(chat);
       if (syncedRef.current.get(chat.id) === sig) continue;
       try {
@@ -689,7 +663,7 @@ export default function App() {
     return true;
   };
 
-  // Merge server chats with local ones (newer wins)
+  // Load only the chat LIST (metadata) — messages load on demand.
   const loadServerChats = async () => {
     try {
       const { chats: serverChats } = await fetchServerChats(getApiUrl);
@@ -698,7 +672,11 @@ export default function App() {
         for (const sc of serverChats) {
           const local = map.get(sc.id);
           if (!local || sc.updatedAt >= local.updatedAt) {
-            map.set(sc.id, sc);
+            map.set(sc.id, {
+              ...sc,
+              // Preserve messages if the local copy already has them
+              messages: local && local.messages.length > 0 ? local.messages : sc.messages,
+            });
             syncedRef.current.set(sc.id, chatSignature(sc));
           }
         }
@@ -710,9 +688,34 @@ export default function App() {
     }
   };
 
+  // Load full messages for a single chat (called when the user opens it).
+  const loadChatMessages = async (chatId: string) => {
+    if (!getAuthToken() || isGuestUser(currentUser)) return;
+    const existing = chatsRef.current.find((c) => c.id === chatId);
+    if (!existing) return;
+    // Skip if we already have messages for this chat
+    if (existing.messages.length > 0) return;
+    try {
+      const { chat: fullChat } = await fetchServerChatById(getApiUrl, chatId);
+      setChats((prev) =>
+        prev.map((c) => (c.id === chatId ? { ...c, messages: fullChat.messages } : c))
+      );
+    } catch (e) {
+      console.error('Failed to load chat messages', e);
+    }
+  };
+
+  // Whenever the active chat changes, lazily load its messages if needed.
+  useEffect(() => {
+    if (!activeChatId || isTempChatActive) return;
+    if (isGuestUser(currentUser)) return;
+    loadChatMessages(activeChatId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChatId, isTempChatActive]);
+
   const handleLogout = async () => {
-    if (isGuestUser(currentUser)) return; // Guests don't need a logout action
-    await syncPendingChats(); // flush any pending chats before logging out
+    if (isGuestUser(currentUser)) return;
+    await syncPendingChats();
     resetToGuest();
   };
 
@@ -738,7 +741,7 @@ export default function App() {
       setShareModalOpen(true);
       if (await copyText(link)) setShareCopied(true);
     } catch (e: any) {
-      setShareError(e?.message || 'Could not create the share link. Please try again.'); // surface the real error
+      setShareError(e?.message || 'Could not create the share link. Please try again.');
       setShareModalOpen(true);
     } finally {
       setIsSharing(false);
@@ -746,14 +749,12 @@ export default function App() {
   };
 
   const handleLoginSuccess = async (user: UserProfile) => {
-    const pendingShareChatId = pendingShareRef.current; // cleared when AuthModal closes
+    const pendingShareChatId = pendingShareRef.current;
     setCurrentUser(user);
     try {
       localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
     } catch (e) {}
     if (!isGuestUser(user)) {
-      // Pull the latest user record (including subscription) from the server, so
-      // plans the user bought previously reappear after logout/login.
       try {
         const { user: fresh } = await fetchMe(getApiUrl);
         const serverUser: any = fresh;
@@ -767,25 +768,18 @@ export default function App() {
           subscriptionStartedAt: serverUser.subscriptionStartedAt,
           subscriptionExpiresAt: serverUser.subscriptionExpiresAt,
           lastPaymentId: serverUser.lastPaymentId,
-          // Keep selectedModel as-is; if it's not owned, the auto-expiry effect
-          // below will fall it back to Free 1B on the next tick.
         }));
       } catch (e) {
         console.error('Failed to load subscription from server', e);
       }
 
-      await syncPendingChats(); // upload any guest chats created before login
-      await loadServerChats(); // then pull the account's existing chats from the cloud
-      // Guest safety-net copies in ephemeral_chats can now be removed — the real data has
-      // been migrated to the account. Note: Temp Chats are intentionally untouched.
+      await syncPendingChats();
+      await loadServerChats();
       purgeGuestEphemeralChats(getApiUrl);
-      // If the guest tapped Share before signing in, share that chat now
       if (pendingShareChatId) await createShareFor(pendingShareChatId);
     }
   };
 
-  // Sharing a chat requires login/signup for guests. After they sign in, the same chat
-  // is shared automatically (that's the normal flow).
   const handleShareChat = async () => {
     if (isTempChatActive || !activeChatId) return;
     if (isGuestUser(currentUser)) {
@@ -821,7 +815,7 @@ export default function App() {
     setIsStreaming(false);
   };
 
-  // Main streaming request to the Llama REST API
+  // Main streaming request
   const handleSendMessage = async (
     text: string,
     options?: { editedMessageId?: string; contextText?: string; contextMessageId?: string }
@@ -829,14 +823,12 @@ export default function App() {
     const editedMessageId = options?.editedMessageId;
     const contextText = options?.contextText;
     const contextMessageId = options?.contextMessageId;
-    // Clear the ask-about chip as soon as we start sending
     if (contextText) setAskAbout(null);
     if (!text.trim() || isStreaming) return;
 
     let targetChatId = activeChatId;
     let targetTitle = 'New Conversation';
 
-    // Create a session if none exists — skipped during edit (chat already exists)
     if (!editedMessageId && !isTempChatActive && (!targetChatId || !currentChat)) {
       targetTitle = text.slice(0, 32) + (text.length > 32 ? '...' : '');
       const newSession: ChatSession = {
@@ -860,11 +852,9 @@ export default function App() {
       status: 'streaming',
     };
 
-    // Compute the history we send to the model BEFORE setState (state updates are async).
     let historyForModel: Message[];
 
     if (editedMessageId) {
-      // EDIT FLOW — update the user message, drop everything after it.
       const baseList = isTempChatActive
         ? tempChatMessages
         : chats.find((c) => c.id === targetChatId)?.messages || [];
@@ -874,7 +864,6 @@ export default function App() {
         .slice(0, idx + 1)
         .map((m) => (m.id === editedMessageId ? { ...m, content: text, timestamp: Date.now() } : m));
     } else {
-      // NORMAL FLOW — prior messages + brand new user message.
       const userMessage: Message = {
         id: 'msg_user_' + Date.now(),
         role: 'user',
@@ -930,7 +919,6 @@ export default function App() {
     abortControllerRef.current = controller;
 
     try {
-      // Expand any "Ask about this" user messages so the model understands the context.
       const expandForModel = (m: Message): Message => {
         if (m.role === 'user' && m.contextText) {
           return {
@@ -1003,7 +991,6 @@ export default function App() {
               if (parsed.text) {
                 accumulatedText += parsed.text;
 
-                // Update the message in state
                 if (isTempChatActive) {
                   setTempChatMessages((prev) =>
                     prev.map((m) =>
@@ -1040,7 +1027,6 @@ export default function App() {
         throw new Error(streamError);
       }
 
-      // Mark as complete
       if (isTempChatActive) {
         setTempChatMessages((prev) =>
           prev.map((m) =>
@@ -1062,7 +1048,6 @@ export default function App() {
         );
       }
 
-      // Play the notification chime if enabled
       if (settings.notificationsEnabled) {
         playNotificationChime();
       }
@@ -1106,6 +1091,7 @@ export default function App() {
       abortControllerRef.current = null;
     }
   };
+
   // Scroll to a message and highlight the snippet the user had selected.
   const handleJumpToSource = (messageId: string, selectedText: string) => {
     const el = document.querySelector(
@@ -1113,16 +1099,13 @@ export default function App() {
     ) as HTMLElement | null;
     if (!el) return;
 
-    // Scroll the source message into the middle of the viewport
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-    // After the scroll settles, find the text within that message and select it
     setTimeout(() => {
       try {
         window.getSelection()?.removeAllRanges();
         const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
         let node: Node | null = null;
-        // Simple single-node match
         while ((node = walker.nextNode())) {
           const value = node.nodeValue || '';
           const idx = value.indexOf(selectedText);
@@ -1133,13 +1116,10 @@ export default function App() {
             const sel = window.getSelection();
             sel?.removeAllRanges();
             sel?.addRange(range);
-            // Clear the selection after a moment
             setTimeout(() => window.getSelection()?.removeAllRanges(), 2600);
             return;
           }
         }
-        // Fallback: if the exact text isn't found in a single text node (markdown split),
-        // pulse the whole message so the user sees which one it was
         el.classList.add('ring-2', 'ring-cyan-400/70', 'rounded-2xl');
         setTimeout(() => el.classList.remove('ring-2', 'ring-cyan-400/70', 'rounded-2xl'), 2000);
       } catch {}
@@ -1151,7 +1131,6 @@ export default function App() {
     const lastUserMsg = [...activeMessages].reverse().find((m) => m.role === 'user');
     if (!lastUserMsg) return;
 
-    // Remove the last assistant message
     if (isTempChatActive) {
       setTempChatMessages((prev) => {
         const lastIdx = prev.map((m) => m.role).lastIndexOf('assistant');
@@ -1191,8 +1170,6 @@ export default function App() {
     paymentHistoryOpen ||
     sharedChatsOpen;
 
-  // "/share/<id>" link: anyone (logged in or guest) can open it — show only the read-only
-  // shared chat instead of the full app.
   if (sharedChatId) {
     return <SharedChatView shareId={sharedChatId} getApiUrl={getApiUrl} isDark={isDark} />;
   }
@@ -1231,7 +1208,7 @@ export default function App() {
         }
       />
 
-      {/* Main Content Area (offset by sidebar on desktop) */}
+      {/* Main Content Area */}
       <main className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden md:pl-72 sm:md:pl-80 transition-all">
         <ChatArea
           messages={activeMessages}
@@ -1280,7 +1257,7 @@ export default function App() {
           )}
         />
 
-        {/* Bottom input field (only shown after the first message) */}
+        {/* Bottom input field */}
         {activeMessages.length > 0 && (
           <ChatInput
             onSendMessage={handleSendMessage}
@@ -1307,8 +1284,8 @@ export default function App() {
         isDark={isDark}
       />
 
-      {/* App Settings Modal (Dark, Bright, System themes, Notifications toggle, Logout) */}
-        <SettingsModal
+      {/* Settings Modal */}
+      <SettingsModal
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         settings={settings}
@@ -1327,13 +1304,11 @@ export default function App() {
         isCheckingUpdates={isCheckingUpdates}
       />
 
-      {/* Over-the-air app update modal */}
+      {/* Update Modal */}
       <UpdateModal
         isOpen={updateModalOpen}
         onClose={() => setUpdateModalOpen(false)}
         onRemindLater={() => {
-          // Snooze for the rest of this browser session.
-          // Reopening the app (new tab) or refreshing after closing starts a fresh session.
           try {
             sessionStorage.setItem(UPDATE_SNOOZE_KEY, '1');
           } catch {}
@@ -1348,7 +1323,7 @@ export default function App() {
         isDark={isDark}
       />
 
-      {/* Auth modal (Google OAuth, Email/Password, Guest mode) */}
+      {/* Auth Modal */}
       <AuthModal
         isOpen={authModalOpen}
         onClose={() => {
@@ -1362,7 +1337,7 @@ export default function App() {
         notice={authNotice}
       />
 
-      {/* Subscription & model plans modal */}
+      {/* Subscription Modal */}
       <SubscriptionModal
         isOpen={subscriptionModalOpen}
         onClose={() => setSubscriptionModalOpen(false)}
@@ -1374,7 +1349,7 @@ export default function App() {
         isDark={isDark}
       />
 
-      {/* Secure payment simulation modal */}
+      {/* Payment Modal */}
       {pendingPaymentItem && (
         <PaymentModal
           isOpen={paymentModalOpen}
@@ -1385,7 +1360,7 @@ export default function App() {
         />
       )}
 
-      {/* Share chat modal — copy the link, or stop sharing to revoke it */}
+      {/* Share Modal */}
       {shareModalOpen && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
@@ -1443,7 +1418,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Payment History Modal — full list + detail + download receipt */}
+      {/* Payment History Modal */}
       <PaymentHistoryModal
         isOpen={paymentHistoryOpen}
         onClose={() => setPaymentHistoryOpen(false)}
@@ -1451,7 +1426,7 @@ export default function App() {
         isDark={isDark}
       />
 
-      {/* Shared Chats Modal — list of user's own shared chats */}
+      {/* Shared Chats Modal */}
       <SharedChatsModal
         isOpen={sharedChatsOpen}
         onClose={() => setSharedChatsOpen(false)}
@@ -1462,7 +1437,7 @@ export default function App() {
         }}
       />
 
-      {/* Hugging Face Token Guide & APK Testing Setup (hidden from the default UI) */}
+      {/* Hugging Face Token Guide */}
       <TokenGuideModal
         isOpen={tokenGuideOpen}
         onClose={() => setTokenGuideOpen(false)}
@@ -1471,7 +1446,6 @@ export default function App() {
         hfStatus={hfStatus}
         isDark={isDark}
       />
-
     </div>
   );
 }

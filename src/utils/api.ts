@@ -130,6 +130,14 @@ export const updateMyName = (getUrl: UrlBuilder, name: string) =>
 export const fetchServerChats = (getUrl: UrlBuilder) =>
   request<{ chats: ChatSession[] }>(getUrl, '/api/chats', {}, true);
 
+export const fetchServerChatById = (getUrl: UrlBuilder, chatId: string) =>
+  request<{ chat: ChatSession }>(
+    getUrl,
+    `/api/chats/${encodeURIComponent(chatId)}`,
+    {},
+    true
+  );
+
 export const saveServerChat = (getUrl: UrlBuilder, chat: ChatSession) =>
   request<{ ok: boolean }>(
     getUrl,

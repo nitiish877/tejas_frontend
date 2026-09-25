@@ -11,8 +11,6 @@ export const getAuthToken = (): string => {
   }
 };
 
-// Anonymous guest ki pehchaan ke liye ek chhota random id — koi chat/personal
-// data nahi, sirf ek id jisse server 30-din wali safety-net copy ko match kar sake.
 export const getGuestId = (): string => {
   try {
     let id = localStorage.getItem(GUEST_ID_KEY);
@@ -62,7 +60,7 @@ async function request<T>(getUrl: UrlBuilder, path: string, options: RequestInit
   try {
     res = await fetch(getUrl(path), { ...options, headers: { ...headers, ...(options.headers as any) } });
   } catch {
-    throw new ApiError('Server se connect nahi ho pa raha. Internet ya backend URL check karo.', 0);
+    throw new ApiError('Could not reach the server. Check your internet or backend URL.', 0);
   }
 
   let data: any = null;
@@ -74,10 +72,9 @@ async function request<T>(getUrl: UrlBuilder, path: string, options: RequestInit
     throw new ApiError(data?.error || `Request failed (${res.status})`, res.status);
   }
 
-  // 200 aaya par JSON nahi: matlab /api call backend tak nahi pahunchi (host ne index.html de diya)
   if (data === null) {
     throw new ApiError(
-      'Backend se galat response aaya (JSON ki jagah page mila). VITE_BACKEND_URL ya /api proxy (rewrite) check karo.',
+      'Backend returned an invalid response (page instead of JSON). Check VITE_BACKEND_URL or the /api proxy rewrite.',
       502
     );
   }
@@ -90,7 +87,6 @@ export interface AuthResult {
   user: UserProfile;
 }
 
-// Subscription snapshot saved on the server, so logout/login keeps the user's plans
 export interface ServerSubscription {
   subscriptionPlan: SubscriptionPlanType;
   ownedPlans: SubscriptionPlanType[];
@@ -105,38 +101,30 @@ export const registerAccount = (getUrl: UrlBuilder, body: { name: string; email:
 
 export const loginAccount = (getUrl: UrlBuilder, body: { email: string; password: string }) =>
   request<AuthResult>(getUrl, '/api/auth/login', { method: 'POST', body: JSON.stringify(body) });
-// Firebase (Google) sign-in: frontend gets an ID token from Firebase, backend
-// verifies it with the Admin SDK and returns our own JWT + user record.
-export const loginWithFirebase = (getUrl: UrlBuilder, idToken: string) =>
-  request<AuthResult>(
-    getUrl,
-    '/api/auth/firebase',
-    { method: 'POST', body: JSON.stringify({ idToken }) }
-  );
 
-// Fetch which sign-in providers are enabled on the server
+export const loginWithFirebase = (getUrl: UrlBuilder, idToken: string) =>
+  request<AuthResult>(getUrl, '/api/auth/firebase', { method: 'POST', body: JSON.stringify({ idToken }) });
+
 export const fetchAuthProviders = (getUrl: UrlBuilder) =>
   request<{ email: boolean; google: boolean; github: boolean; microsoft: boolean }>(
     getUrl,
     '/api/auth/providers'
   );
 
-
 export const fetchMe = (getUrl: UrlBuilder) => request<{ user: UserProfile }>(getUrl, '/api/auth/me', {}, true);
 
 export const updateMyName = (getUrl: UrlBuilder, name: string) =>
   request<{ user: UserProfile }>(getUrl, '/api/auth/me', { method: 'PUT', body: JSON.stringify({ name }) }, true);
 
+// ---- Chats ----
 export const fetchServerChats = (getUrl: UrlBuilder) =>
   request<{ chats: ChatSession[] }>(getUrl, '/api/chats', {}, true);
 
 export const fetchServerChatById = (getUrl: UrlBuilder, chatId: string) =>
-  request<{ chat: ChatSession }>(
-    getUrl,
-    `/api/chats/${encodeURIComponent(chatId)}`,
-    {},
-    true
-  );
+  request<{ chat: ChatSession }>(getUrl, `/api/chats/${encodeURIComponent(chatId)}`, {}, true);
+
+export const fetchTrashChats = (getUrl: UrlBuilder) =>
+  request<{ chats: ChatSession[] }>(getUrl, '/api/chats/trash', {}, true);
 
 export const saveServerChat = (getUrl: UrlBuilder, chat: ChatSession) =>
   request<{ ok: boolean }>(
@@ -155,20 +143,39 @@ export const saveServerChat = (getUrl: UrlBuilder, chat: ChatSession) =>
     true
   );
 
+// Move chat to trash (soft delete). Share link is revoked server-side.
 export const deleteServerChat = (getUrl: UrlBuilder, id: string) =>
-  request<{ ok: boolean }>(getUrl, `/api/chats/${encodeURIComponent(id)}`, { method: 'DELETE' }, true);
+  request<{ ok: boolean; deletedAt?: number; recoveryDays?: number }>(
+    getUrl,
+    `/api/chats/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
+    true
+  );
 
-// Chat me kuch badla hai ya nahi ye pakadne ke liye (pin/title/messages)
+// Restore from trash.
+export const restoreServerChat = (getUrl: UrlBuilder, id: string) =>
+  request<{ ok: boolean }>(
+    getUrl,
+    `/api/chats/${encodeURIComponent(id)}/restore`,
+    { method: 'PUT' },
+    true
+  );
+
+// Permanently delete (hard delete from DB).
+export const permanentlyDeleteServerChat = (getUrl: UrlBuilder, id: string) =>
+  request<{ ok: boolean }>(
+    getUrl,
+    `/api/chats/${encodeURIComponent(id)}/permanent`,
+    { method: 'DELETE' },
+    true
+  );
+
 export const chatSignature = (c: ChatSession): string => {
   const last = c.messages[c.messages.length - 1];
   return `${c.updatedAt}|${c.isPinned ? 1 : 0}|${c.title}|${c.messages.length}|${last?.content?.length ?? 0}`;
 };
 
-// ---------------- EPHEMERAL (GUEST / TEMP) CHAT SYNC ----------------
-// Security: guest ki normal chat aur temp chat browser me kahin store nahi hoti.
-// Ye sirf background me server ko bheji jaati hai, jahan 30 din ke liye rakhi jaati
-// hai (safety-net), phir apne aap delete ho jaati hai. Login ho to bhi ye zaroori
-// nahi hai (login required nahi), isliye alag request path use karte hain.
+// ---------------- EPHEMERAL ----------------
 export const saveEphemeralChat = async (
   getUrl: UrlBuilder,
   chat: ChatSession,
@@ -191,13 +198,9 @@ export const saveEphemeralChat = async (
         messages: chat.messages,
       }),
     });
-  } catch {
-    // Best-effort hai: backend down ho to bhi guest chat UI kaam karti rahe
-  }
+  } catch {}
 };
 
-// Login/register safal hone ke baad guest ki purani safety-net copies hata do
-// (asli chats ab account me migrate ho chuki hain).
 export const purgeGuestEphemeralChats = async (getUrl: UrlBuilder): Promise<void> => {
   const token = getAuthToken();
   const guestId = getGuestId();
@@ -207,9 +210,7 @@ export const purgeGuestEphemeralChats = async (getUrl: UrlBuilder): Promise<void
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
-  } catch {
-    // best-effort
-  }
+  } catch {}
 };
 
 // ---------------- SHARE ----------------
@@ -230,18 +231,15 @@ export const fetchSharedChat = (getUrl: UrlBuilder, shareId: string) =>
   request<SharedChatData>(getUrl, `/api/share/${encodeURIComponent(shareId)}`, {}, false);
 
 // ---------------- SUBSCRIPTION ----------------
-// Persist the subscription snapshot on the server so it survives logout/login.
-export const saveSubscriptionToServer = (
-  getUrl: UrlBuilder,
-  data: ServerSubscription
-) =>
+export const saveSubscriptionToServer = (getUrl: UrlBuilder, data: ServerSubscription) =>
   request<{ user: UserProfile }>(
     getUrl,
     '/api/auth/subscription',
     { method: 'PUT', body: JSON.stringify(data) },
     true
   );
-  // ---------------- PAYMENTS ----------------
+
+// ---------------- PAYMENTS ----------------
 export interface PaymentRecord {
   id: string;
   plan: SubscriptionPlanType;
@@ -256,16 +254,8 @@ export interface PaymentRecord {
   createdAt: number;
 }
 
-export const savePaymentRecord = (
-  getUrl: UrlBuilder,
-  data: Omit<PaymentRecord, 'id'>
-) =>
-  request<{ ok: boolean; id: string }>(
-    getUrl,
-    '/api/payments',
-    { method: 'POST', body: JSON.stringify(data) },
-    true
-  );
+export const savePaymentRecord = (getUrl: UrlBuilder, data: Omit<PaymentRecord, 'id'>) =>
+  request<{ ok: boolean; id: string }>(getUrl, '/api/payments', { method: 'POST', body: JSON.stringify(data) }, true);
 
 export const fetchMyPayments = (getUrl: UrlBuilder) =>
   request<{ payments: PaymentRecord[] }>(getUrl, '/api/payments', {}, true);

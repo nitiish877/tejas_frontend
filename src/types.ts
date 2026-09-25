@@ -19,6 +19,10 @@ export interface ChatSession {
   updatedAt: number;
   isPinned?: boolean;
   isTemp?: boolean;
+  // Trash + metadata-only list fields
+  deletedAt?: number;
+  daysLeft?: number;
+  messageCount?: number;
 }
 
 export interface UserProfile {
@@ -45,13 +49,10 @@ export interface AppSettings {
   subscriptionStartedAt?: number;
   subscriptionExpiresAt?: number;
   lastPaymentId?: string;
-  // Every plan the user has bought (may be multiple — Cat + Chetak + Arka all at once)
   ownedPlans?: SubscriptionPlanType[];
-  // Expiry timestamp per plan, so each plan expires independently
   planExpiries?: Partial<Record<SubscriptionPlanType, number>>;
 }
 
-// Model → plan mapping (used to keep the "active plan" in sync with the selected model)
 export const MODEL_TO_PLAN: Record<string, SubscriptionPlanType> = {
   'meta-llama/Llama-3.2-1B-Instruct': 'free',
   'meta-llama/Llama-3.2-3B-Instruct': 'cat',

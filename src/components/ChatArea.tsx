@@ -27,6 +27,7 @@ import {
 
 interface ChatAreaProps {
   messages: Message[];
+  isLoadingMessages?: boolean;
   isStreaming: boolean;
   isTempChatActive: boolean;
   onOpenSidebar: () => void;
@@ -56,6 +57,7 @@ interface ChatAreaProps {
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
   messages,
+  isLoadingMessages = false,
   isStreaming,
   isTempChatActive,
   onOpenSidebar,
@@ -580,7 +582,14 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       )}
 
       {/* Main content */}
-      {messages.length === 0 ? (
+      {isLoadingMessages ? (
+        <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4">
+          <div className="flex flex-col items-center gap-3">
+            <span className="spinner-ring text-zinc-400" style={{ width: 28, height: 28, borderWidth: 3 }} />
+            <p className={`text-xs ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>Loading chat…</p>
+          </div>
+        </div>
+      ) : messages.length === 0 ? (
         <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 overflow-y-auto">
           <div className="max-w-2xl w-full text-center space-y-6 animate-in fade-in duration-200 py-6">
             <div className="flex justify-center mb-2">

@@ -15,6 +15,7 @@ import { PaymentHistoryModal } from './components/PaymentHistoryModal';
 import { SharedChatsModal } from './components/SharedChatsModal';
 import { getClientVersion, isVersionDismissed, AppVersionInfo } from './version';
 import { playNotificationChime } from './utils/audio';
+import { AlertTriangle, Trash2 } from 'lucide-react';
 import {
   ApiError,
   chatSignature,
@@ -25,9 +26,12 @@ import {
   fetchMe,
   fetchServerChatById,
   fetchServerChats,
+  fetchTrashChats,
   getAuthToken,
   isGuestUser,
+  permanentlyDeleteServerChat,
   purgeGuestEphemeralChats,
+  restoreServerChat,
   saveEphemeralChat,
   savePaymentRecord,
   saveServerChat,
@@ -171,6 +175,22 @@ export default function App() {
 
   // "Ask about this" — selected text from an earlier assistant message
   const [askAbout, setAskAbout] = useState<{ text: string; messageId: string } | null>(null);
+
+  // ---- Trash + loading state ----
+  const [trashChats, setTrashChats] = useState<ChatSession[]>([]);
+  const [trashLoading, setTrashLoading] = useState(false);
+  const [chatsLoading, setChatsLoading] = useState(false);
+  const [loadingMessageIds, setLoadingMessageIds] = useState<Record<string, boolean>>({});
+
+  // Delete confirmation toast (bottom of screen)
+  const [deleteToast, setDeleteToast] = useState<{ title: string; daysLeft: number } | null>(null);
+
+  // Share warning modal
+  const [shareWarningOpen, setShareWarningOpen] = useState(false);
+  const pendingShareRef2 = useRef<(() => void) | null>(null);
+
+  // Permanent delete confirmation
+  const [confirmPermanentDelete, setConfirmPermanentDelete] = useState<{ id: string; title: string } | null>(null);
 
   const handleOpenSubscription = (plan: SubscriptionPlanType = 'cat') => {
     setHighlightPlan(plan);
@@ -597,16 +617,29 @@ export default function App() {
     );
   };
 
-  const handleDeleteChat = (id: string, e: React.MouseEvent) => {
+  const handleDeleteChat = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (getAuthToken() && !isGuestUser(currentUser)) {
-      deleteServerChat(getApiUrl, id).catch((err) => console.error('Chat delete sync failed', err));
-    }
+    const target = chats.find((c) => c.id === id);
+    const title = target?.title || 'Chat';
+
+    // Optimistically remove from the active list
     syncedRef.current.delete(id);
     setChats((prev) => prev.filter((c) => c.id !== id));
     if (activeChatId === id) {
       const remaining = chats.filter((c) => c.id !== id);
       setActiveChatId(remaining.length > 0 ? remaining[0].id : null);
+    }
+
+    // Server: move to trash (also revokes share link)
+    if (getAuthToken() && !isGuestUser(currentUser)) {
+      try {
+        const res = await deleteServerChat(getApiUrl, id);
+        const days = res?.recoveryDays ?? 60;
+        setDeleteToast({ title, daysLeft: days });
+        setTimeout(() => setDeleteToast(null), 5000);
+      } catch (err) {
+        console.error('Chat delete sync failed', err);
+      }
     }
   };
 
@@ -664,6 +697,7 @@ export default function App() {
 
   // Load only the chat LIST (metadata) — messages load on demand.
   const loadServerChats = async () => {
+    setChatsLoading(true);
     try {
       const { chats: serverChats } = await fetchServerChats(getApiUrl);
       setChats((prev) => {
@@ -683,6 +717,8 @@ export default function App() {
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) resetToGuest();
       else console.error('Failed to load chats', e);
+    } finally {
+      setChatsLoading(false);
     }
   };
 
@@ -692,6 +728,7 @@ export default function App() {
     const existing = chatsRef.current.find((c) => c.id === chatId);
     if (!existing) return;
     if (existing.messages.length > 0) return;
+    setLoadingMessageIds((prev) => ({ ...prev, [chatId]: true }));
     try {
       const { chat: fullChat } = await fetchServerChatById(getApiUrl, chatId);
       setChats((prev) =>
@@ -699,9 +736,61 @@ export default function App() {
       );
     } catch (e) {
       console.error('Failed to load chat messages', e);
+    } finally {
+      setLoadingMessageIds((prev) => {
+        const copy = { ...prev };
+        delete copy[chatId];
+        return copy;
+      });
     }
   };
 
+  // ---- Trash: load list ----
+  const loadTrashChats = async () => {
+    if (!getAuthToken() || isGuestUser(currentUser)) {
+      setTrashChats([]);
+      return;
+    }
+    setTrashLoading(true);
+    try {
+      const { chats } = await fetchTrashChats(getApiUrl);
+      setTrashChats(chats || []);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) resetToGuest();
+      else console.error('Failed to load trash', e);
+    } finally {
+      setTrashLoading(false);
+    }
+  };
+
+  // ---- Trash: restore ----
+  const handleRestoreChat = async (chatId: string) => {
+    try {
+      await restoreServerChat(getApiUrl, chatId);
+      // Remove from trash view, add back to active chats
+      setTrashChats((prev) => prev.filter((c) => c.id !== chatId));
+      await loadServerChats();
+    } catch (e: any) {
+      alert(e?.message || 'Could not recover this chat.');
+    }
+  };
+
+  // ---- Trash: permanently delete (hard delete from DB) ----
+  const handlePermanentlyDeleteChat = (chatId: string, title: string) => {
+    setConfirmPermanentDelete({ id: chatId, title });
+  };
+
+  const executePermanentDelete = async () => {
+    if (!confirmPermanentDelete) return;
+    const { id } = confirmPermanentDelete;
+    setConfirmPermanentDelete(null);
+    try {
+      await permanentlyDeleteServerChat(getApiUrl, id);
+      setTrashChats((prev) => prev.filter((c) => c.id !== id));
+    } catch (e: any) {
+      alert(e?.message || 'Could not delete this chat.');
+    }
+  };
   // Whenever the active chat changes, lazily load its messages if needed.
   useEffect(() => {
     if (!activeChatId || isTempChatActive) return;
@@ -785,7 +874,23 @@ export default function App() {
       setAuthModalOpen(true);
       return;
     }
-    await createShareFor(activeChatId);
+    // Show a warning before sharing — the chat content is public once shared.
+    pendingShareRef2.current = () => {
+      createShareFor(activeChatId);
+    };
+    setShareWarningOpen(true);
+  };
+
+  const proceedWithShare = () => {
+    setShareWarningOpen(false);
+    const fn = pendingShareRef2.current;
+    pendingShareRef2.current = null;
+    fn?.();
+  };
+
+  const cancelShare = () => {
+    setShareWarningOpen(false);
+    pendingShareRef2.current = null;
   };
 
   const handleStopSharing = async () => {
@@ -1197,12 +1302,19 @@ export default function App() {
         subscriptionPlan={settings.subscriptionPlan || 'free'}
         isDark={isDark}
         appDownloadUrl="/Tejas.apk"
+        trashChats={trashChats}
+        trashLoading={trashLoading}
+        chatsLoading={chatsLoading}
+        onLoadTrash={loadTrashChats}
+        onRestoreChat={handleRestoreChat}
+        onPermanentlyDeleteChat={handlePermanentlyDeleteChat}
       />
 
       {/* Main Content Area */}
       <main className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden md:pl-72 sm:md:pl-80 transition-all">
         <ChatArea
           messages={activeMessages}
+          isLoadingMessages={!!activeChatId && !!loadingMessageIds[activeChatId]}
           isStreaming={isStreaming}
           isTempChatActive={isTempChatActive}
           onOpenSidebar={() => setSidebarOpen(true)}
@@ -1437,6 +1549,126 @@ export default function App() {
         hfStatus={hfStatus}
         isDark={isDark}
       />
+
+      {/* Share warning modal */}
+      {shareWarningOpen && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4"
+          onClick={cancelShare}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-sm rounded-2xl border shadow-2xl p-5 space-y-4 ${
+              isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-900'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold">Before you share</h3>
+                <p className={`text-[11px] mt-0.5 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                  This chat will become publicly readable
+                </p>
+              </div>
+            </div>
+
+            <p className={`text-xs leading-relaxed ${isDark ? 'text-zinc-300' : 'text-zinc-600'}`}>
+              Please check that this chat does not contain any <strong>sensitive, private, or personal information</strong>.
+              Anyone with the link will be able to read the entire conversation.
+            </p>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={cancelShare}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-colors ${
+                  isDark ? 'border-zinc-700 hover:bg-zinc-800 text-zinc-200' : 'border-zinc-300 hover:bg-zinc-100 text-zinc-800'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={proceedWithShare}
+                className="flex-1 py-2.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white transition-all shadow-sm"
+              >
+                Continue to Share
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Permanent delete confirmation modal */}
+      {confirmPermanentDelete && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4"
+          onClick={() => setConfirmPermanentDelete(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-sm rounded-2xl border shadow-2xl p-5 space-y-4 ${
+              isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-900'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/15 text-rose-400 border border-rose-500/30 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold">Delete forever?</h3>
+                <p className={`text-[11px] mt-0.5 truncate ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                  {confirmPermanentDelete.title}
+                </p>
+              </div>
+            </div>
+
+            <p className={`text-xs leading-relaxed ${isDark ? 'text-zinc-300' : 'text-zinc-600'}`}>
+              This chat will be <strong>permanently deleted</strong> and cannot be recovered.
+            </p>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setConfirmPermanentDelete(null)}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-colors ${
+                  isDark ? 'border-zinc-700 hover:bg-zinc-800 text-zinc-200' : 'border-zinc-300 hover:bg-zinc-100 text-zinc-800'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executePermanentDelete}
+                className="flex-1 py-2.5 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white transition-all shadow-sm"
+              >
+                Delete Forever
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete-to-trash toast */}
+      {deleteToast && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[90] animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <div
+            className={`flex items-center gap-2.5 rounded-xl border px-4 py-2.5 shadow-2xl ${
+              isDark ? 'bg-zinc-900 border-zinc-700 text-zinc-100' : 'bg-white border-zinc-300 text-zinc-900'
+            }`}
+          >
+            <Trash2 className="w-4 h-4 text-amber-400 shrink-0" />
+            <div className="text-xs">
+              <p className="font-semibold">Moved to Trash</p>
+              <p className={`text-[10px] mt-0.5 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                Recover within {deleteToast.daysLeft} days
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

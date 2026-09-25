@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Logo } from './Logo';
 
 interface SplashScreenProps {
   isDark?: boolean;
@@ -9,9 +10,10 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ isDark = true, onFin
   const [phase, setPhase] = useState<'logo' | 'coding' | 'fading'>('logo');
 
   useEffect(() => {
-    const t1 = setTimeout(() => setPhase('coding'), 1400);
-    const t2 = setTimeout(() => setPhase('fading'), 2600);
-    const t3 = setTimeout(() => onFinish?.(), 3200);
+    // Faster timing — total ~1.8 seconds
+    const t1 = setTimeout(() => setPhase('coding'), 700);
+    const t2 = setTimeout(() => setPhase('fading'), 1400);
+    const t3 = setTimeout(() => onFinish?.(), 1800);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
@@ -21,7 +23,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ isDark = true, onFin
 
   return (
     <div
-      className={`fixed inset-0 z-[999] flex items-center justify-center transition-opacity duration-600 ${
+      className={`fixed inset-0 z-[999] flex items-center justify-center transition-opacity duration-500 ${
         phase === 'fading' ? 'opacity-0 pointer-events-none' : 'opacity-100'
       }`}
       style={{
@@ -51,21 +53,11 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ isDark = true, onFin
 
       {/* Center content */}
       <div className="relative z-10 flex flex-col items-center gap-3 px-6 text-center">
-        {/* Logo */}
-        <div className="relative mb-2">
+        {/* App logo (uses the same Logo component as the rest of the app) */}
+        <div className="relative mb-1">
           <div className="absolute inset-0 rounded-2xl bg-cyan-500/20 blur-2xl" />
-          <div
-            className={`relative w-20 h-20 rounded-2xl flex items-center justify-center border ${
-              isDark ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-zinc-300'
-            }`}
-          >
-            <span
-              className={`text-4xl font-black tracking-tighter ${
-                isDark ? 'text-zinc-100' : 'text-zinc-900'
-              }`}
-            >
-              T
-            </span>
+          <div className="relative">
+            <Logo size="xl" glowing={false} />
           </div>
         </div>
 
@@ -89,7 +81,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ isDark = true, onFin
 
         {/* Coding line (appears in phase 2) */}
         <div
-          className={`mt-6 font-mono text-xs transition-all duration-700 ${
+          className={`mt-5 font-mono text-xs transition-all duration-500 ${
             phase === 'logo' ? 'opacity-0 translate-y-2' : 'opacity-100 translate-y-0'
           } ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`}
         >
